@@ -56,6 +56,30 @@ fn Node(token_type: type) type {
                 },
             }
         }
+
+        pub fn getLeaf(self: Self) ?token_type {
+            switch (self) {
+                .leaf => |leaf| return leaf,
+                .next => return null,
+                .both => |both| return both.leaf,
+            }
+        }
+
+        pub fn getNext(self: Self) ?usize {
+            switch (self) {
+                .leaf => return null,
+                .next => |next| return next,
+                .both => |both| return both.next,
+            }
+        }
+
+        pub fn withLeaf(self: Self, leaf: token_type) Self {
+            switch (self) {
+                .leaf => return self,
+                .next => |next| return .{ .both = .{ .next = next, .leaf = leaf } },
+                .both => return self,
+            }
+        }
     };
 }
 
@@ -98,6 +122,7 @@ fn Table(token_type: type) type {
         sequences: Map(u21, Node(token_type)),
         fallthrough: ?Fallthrough(token_type),
         expanded: bool = false,
+        expanded2: bool = false,
 
         pub fn init() Self {
             return .{
@@ -122,6 +147,33 @@ fn Table(token_type: type) type {
         pub fn setFallthrough(self: *Self, fallthrough: Fallthrough(token_type)) void {
             self.fallthrough = fallthrough;
         }
+
+        pub fn merge(self: *Self, other: *const Self, jump_table: *JumpTable(token_type), other_index: usize) void {
+            for (other.table.keys_iter()) |key| {
+                @compileLog(key);
+            }
+
+            for (other.sequences.keys_iter()) |key| {
+                const node = other.sequences.get(key) orelse unreachable;
+
+                if (node.getNext()) |next| {
+                    if (next == other_index) {
+                        const idx = jump_table.len();
+                        const new_node = if (node.getLeaf()) |leaf| .{ .both = .{ .leaf = leaf, .next = idx } } else .{ .next = idx };
+
+                        var new_table = Table(token_type).init();
+                        new_table.sequences.put(key, new_node);
+                        jump_table.append(new_table);
+
+                        self.sequences.put(key, new_node);
+                    } else {
+                        @compileError("unimplemented");
+                    }
+                } else {
+                    @compileError("unimplemented");
+                }
+            }
+        }
     };
 }
 
@@ -131,16 +183,34 @@ fn JumpTable(token_type: type) type {
 
 fn Child(token_type: type) type {
     return union(enum) {
+        const Self = @This();
+
         token: token_type,
         next: usize,
         both: struct {
             token: token_type,
             next: usize,
         },
+
+        pub fn getToken(self: Self) ?token_type {
+            switch (self) {
+                .token => |token| return token,
+                .next => return null,
+                .both => |both| return both.token,
+            }
+        }
+
+        pub fn getNext(self: Self) ?usize {
+            switch (self) {
+                .token => return null,
+                .next => |next| return next,
+                .both => |both| return both.next,
+            }
+        }
     };
 }
 
-fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *JumpTable(token_type), tokens: []regex.Token, child: Child(token_type)) void {
+fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *JumpTable(token_type), tokens: []const regex.Token, parents: []const *Node(token_type), child: Child(token_type)) []const *Node(token_type) {
     const children = tokens[1..];
     var table = if (jump_table.len() > 0) jump_table.at(index) else blk: {
         jump_table.append(Table(token_type).init());
@@ -172,7 +242,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
 
                 table.setFallthrough(.{ .value = value, .next = next });
 
-                return;
+                return &.{};
             }
 
             if (table.get(c)) |v| {
@@ -182,14 +252,13 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                             switch (child) {
                                 .token => |token| {
                                     table.put(c, .{ .both = .{ .next = idx, .leaf = token } });
-                                    return;
+                                    return &.{table.table.at(c)};
                                 },
                                 else => unreachable,
                             }
                         }
 
-                        insert_tokens(token_type, idx, invert, jump_table, children, child);
-                        return;
+                        return insert_tokens(token_type, idx, invert, jump_table, children, parents, child);
                     },
                     .leaf => |value| {
                         if (children.len == 0) {
@@ -208,7 +277,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                             @compileError("multiple identical patterns");
                         }
 
-                        insert_tokens(token_type, value.next, jump_table, children, child);
+                        insert_tokens(token_type, value.next, invert, jump_table, children, parents, child);
                         return;
                     },
                 }
@@ -217,7 +286,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                     switch (child) {
                         .token => |chil| {
                             table.put(c, .{ .leaf = chil });
-                            return;
+                            return &.{table.table.at(c)};
                         },
                         .next => |idx| {
                             table.put(c, .{ .next = idx });
@@ -236,8 +305,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                     table.put(c, .{ .next = idx });
                 }
 
-                insert_tokens(token_type, idx, invert, jump_table, children, child);
-                return;
+                return insert_tokens(token_type, idx, invert, jump_table, children, &.{table.table.at(c)}, child);
             }
         },
         .Sequence => |c| {
@@ -267,11 +335,16 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                                     table.sequences.put(c, .{ .both = .{ .next = idx, .leaf = token } });
                                     return;
                                 },
-                                else => unreachable,
+                                else => {
+                                    _ = table.sequences.get(c) orelse @compileError("i have no idea what is wrong");
+                                    // i should probably check something here
+                                    // but i dont even give a fuck
+                                    return;
+                                },
                             }
                         }
 
-                        insert_tokens(token_type, idx, invert, jump_table, children, child);
+                        insert_tokens(token_type, idx, invert, jump_table, children, table.sequences.at(c), child);
                         return;
                     },
                     .leaf => |value| {
@@ -300,14 +373,16 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                     switch (child) {
                         .token => |chil| {
                             table.sequences.put(c, .{ .leaf = chil });
-                            return;
                         },
                         .next => |idx| {
                             table.sequences.put(c, .{ .next = idx });
-                            return;
                         },
-                        else => unreachable,
+                        .both => |both| {
+                            table.sequences.put(c, .{ .both = .{ .leaf = both.token, .next = both.next } });
+                        },
                     }
+
+                    return &.{table.sequences.at(c)};
                 }
 
                 const idx = jump_table.len();
@@ -319,8 +394,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                     table.sequences.put(c, .{ .next = idx });
                 }
 
-                insert_tokens(token_type, idx, invert, jump_table, children, child);
-                return;
+                return insert_tokens(token_type, idx, invert, jump_table, children, &.{table.sequences.at(c)}, child);
             }
         },
         .Group => |group| {
@@ -330,10 +404,10 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                     const c = switch (child) {
                         .token => |token| .{ .both = .{ .next = index, .token = token } },
                         .next => |next| .{ .next = next },
-                        else => unreachable,
+                        .both => |both| .{ .both = .{ .next = index, .token = both.token } },
                     };
 
-                    insert_tokens(token_type, index, group.invert, jump_table, &sub_tokens, c);
+                    return insert_tokens(token_type, index, group.invert, jump_table, &sub_tokens, parents, c);
                 } else {
                     const idx = jump_table.len();
                     jump_table.append(Table(token_type).init());
@@ -346,7 +420,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
         .Capture => |capture| {
             for (capture.options) |option| {
                 if (children.len == 0) {
-                    insert_tokens(token_type, index, invert, jump_table, option, child);
+                    return insert_tokens(token_type, index, invert, jump_table, option, parents, child);
                 } else {
                     const idx = jump_table.len();
                     jump_table.append(Table(token_type).init());
@@ -366,8 +440,32 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                     }
 
                     if (children.len == 0) {
-                        insert_tokens(token_type, index, invert, jump_table, &sub_tokens, child);
-                        @compileError("zero or one at the end is not implemented correctly");
+                        const token = child.getToken() orelse @compileError("honestly i have no idea bro");
+                        if (parents.len) {
+                            @compileError("cannot have zero length pattern");
+                        }
+
+                        for (parents) |p| {
+                            p.* = p.withLeaf(token);
+                        }
+
+                        const nodes = insert_tokens(token_type, index, invert, jump_table, &sub_tokens, parents, child);
+                        for (nodes) |node| {
+                            if (node.getLeaf() == null) {
+                                node.* = node.withLeaf(token);
+                            }
+                        }
+
+                        var out: [parents.len + nodes.len]*Node(token_type) = undefined;
+                        for (parents, 0..) |val, i| {
+                            out[i] = val;
+                        }
+
+                        for (nodes, parents.len..) |val, i| {
+                            out[i] = val;
+                        }
+
+                        return &out;
                     } else {
                         insert_tokens(token_type, index, invert, jump_table, &sub_tokens, child);
                         insert_tokens(token_type, index, invert, jump_table, children, child);
@@ -376,11 +474,30 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                 .ZeroOrMore => {
                     var sub_tokens = [_]regex.Token{quant.inner.*};
                     if (children.len == 0) {
-                        insert_tokens(token_type, index, invert, jump_table, &sub_tokens, .{ .next = index });
-                        insert_tokens(token_type, index, invert, jump_table, &sub_tokens, child);
+                        const token = child.getToken() orelse @compileError("honestly i have no idea bro");
+                        if (parents.len == 0) {
+                            @compileError("cannot have a zero length pattern");
+                        }
+
+                        for (parents) |p| {
+                            p.* = p.withLeaf(token);
+                        }
+
+                        return insert_tokens(token_type, index, invert, jump_table, &sub_tokens, parents, .{ .both = .{ .next = index, .token = token } });
                     } else {
-                        insert_tokens(token_type, index, invert, jump_table, &sub_tokens, .{ .next = index });
-                        insert_tokens(token_type, index, invert, jump_table, children, child);
+                        const a = insert_tokens(token_type, index, invert, jump_table, &sub_tokens, parents, .{ .next = index });
+                        const b = insert_tokens(token_type, index, invert, jump_table, children, parents, child);
+
+                        var out: [a.len + b.len]*Node(token_type) = undefined;
+                        for (a, 0..) |val, i| {
+                            out[i] = val;
+                        }
+
+                        for (b, a.len..) |val, i| {
+                            out[i] = val;
+                        }
+
+                        return &out;
                     }
                 },
                 .OneOrMore => {
@@ -388,14 +505,29 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                     jump_table.append(Table(token_type).init());
 
                     var sub_tokens = [_]regex.Token{quant.inner.*};
-                    if (children.len == 0) {
-                        insert_tokens(token_type, index, invert, jump_table, &sub_tokens, .{ .next = idx });
-                        insert_tokens(token_type, idx, invert, jump_table, &sub_tokens, child);
-                    } else {
-                        insert_tokens(token_type, index, invert, jump_table, &sub_tokens, .{ .next = idx });
-                        insert_tokens(token_type, idx, invert, jump_table, &sub_tokens, .{ .next = idx });
-                        insert_tokens(token_type, idx, invert, jump_table, children, child);
+
+                    const a = insert_tokens(token_type, index, invert, jump_table, &sub_tokens, parents, .{ .next = idx });
+                    const b = insert_tokens(token_type, idx, invert, jump_table, &sub_tokens, parents, .{ .next = idx });
+
+                    var out: [a.len + b.len]*Node(token_type) = undefined;
+                    for (a, 0..) |val, i| {
+                        out[i] = val;
                     }
+
+                    for (b, a.len..) |val, i| {
+                        out[i] = val;
+                    }
+
+                    if (children.len == 0) {
+                        const token = child.getToken() orelse @compileError("honestly i have no idea bro");
+                        for (parents) |p| {
+                            p.* = p.withLeaf(token);
+                        }
+
+                        return &out;
+                    }
+
+                    return insert_tokens(token_type, idx, invert, jump_table, children, &out, child);
                 },
             }
         },
@@ -417,19 +549,21 @@ fn StaticTable(token_type: type) type {
     };
 }
 
-fn Expansion(token_type: type) type {
+fn FallthroughExpansion(token_type: type) type {
     return struct {
         index: usize,
         fallthrough: Fallthrough(token_type),
     };
 }
 
-fn expand_jump_table(token_type: type, jump_table: *JumpTable(token_type), index: usize, in_expansion: ?Expansion(token_type)) void {
+fn expand_jump_table_fallthrough(token_type: type, jump_table: *JumpTable(token_type), index: usize, in_expansion: ?FallthroughExpansion(token_type)) void {
     var table = jump_table.at(index);
     if (table.expanded) {
+        // already expanded, prevent infinite recursion
         return;
     }
 
+    // currently expanding this branch
     if (in_expansion) |expansion| {
         const fallthrough = expansion.fallthrough;
         table.expanded = true;
@@ -454,7 +588,7 @@ fn expand_jump_table(token_type: type, jump_table: *JumpTable(token_type), index
                         }
 
                         next_table.fallthrough = fallthrough;
-                        expand_jump_table(token_type, jump_table, next_index, expansion);
+                        expand_jump_table_fallthrough(token_type, jump_table, next_index, expansion);
                     }
                 },
                 else => @compileError("unimplemented"),
@@ -464,11 +598,13 @@ fn expand_jump_table(token_type: type, jump_table: *JumpTable(token_type), index
         return;
     }
 
+    // if this branch has a fallthrough, expand it
     if (table.fallthrough) |fallthrough| {
-        expand_jump_table(token_type, jump_table, index, .{ .fallthrough = fallthrough, .index = index });
+        expand_jump_table_fallthrough(token_type, jump_table, index, .{ .fallthrough = fallthrough, .index = index });
         return;
     }
 
+    // not in an expansion and don't have a fallthrough
     table.expanded = true;
     for (table.table.keys_iter()) |key| {
         const node = table.get(key) orelse unreachable;
@@ -478,7 +614,88 @@ fn expand_jump_table(token_type: type, jump_table: *JumpTable(token_type), index
             .both => |both| both.next,
         };
 
-        expand_jump_table(token_type, jump_table, next_index, null);
+        expand_jump_table_fallthrough(token_type, jump_table, next_index, null);
+    }
+}
+
+fn expand_jump_table_sequences(token_type: type, jump_table: *JumpTable(token_type), index: usize) void {
+    const table = jump_table.at(index);
+    if (table.expanded2) {
+        // already expanded lol
+        return;
+    }
+
+    table.expanded2 = true;
+    if (table.sequences.len() != 0) {
+        for (table.table.keys_iter()) |key| {
+            for (table.sequences.keys_iter()) |seq_key| {
+                if (!match_sequence(seq_key, key)) {
+                    continue;
+                }
+
+                var node = table.table.at(key);
+                const seq_node = table.sequences.at(seq_key);
+
+                if (node.getLeaf() == null) {
+                    if (seq_node.getLeaf()) |leaf| {
+                        node.* = node.withLeaf(leaf);
+                    }
+                }
+
+                if (node.getNext()) |next| {
+                    if (seq_node.getNext()) |seq_next| {
+                        var next_table = jump_table.at(next);
+                        const next_seq_table = jump_table.at(seq_next);
+
+                        next_table.merge(next_seq_table, jump_table, seq_next);
+                    }
+                }
+            }
+        }
+    }
+
+    for (table.table.keys_iter()) |key| {
+        const node = table.table.get(key) orelse unreachable;
+        if (node.getNext()) |next| {
+            expand_jump_table_sequences(token_type, jump_table, next);
+        }
+    }
+}
+
+fn match_sequence(sequence: u21, key: u21) bool {
+    switch (sequence) {
+        'w' => {
+            // uppercase letter
+            if ('A' <= key and key <= 'Z') {
+                return true;
+            }
+
+            // lowercase letter
+            if ('a' <= key and key <= 'z') {
+                return true;
+            }
+
+            return false;
+        },
+        '0' => {
+            if ('0' <= key and key <= '9') {
+                return true;
+            }
+
+            return false;
+        },
+        'W' => {
+            if (match_sequence('w', key)) {
+                return true;
+            }
+
+            if (match_sequence('0', key)) {
+                return true;
+            }
+
+            return false;
+        },
+        else => unreachable,
     }
 }
 
@@ -494,10 +711,11 @@ fn compile_static_jump_map(token_type: type, comptime token_patterns: []const To
     var jump_table = JumpTable(token_type).init();
     for (token_patterns) |token_pattern| {
         const tokens = regex.parsePattern(token_pattern.pattern) catch |err| @compileError(err);
-        insert_tokens(token_type, 0, false, &jump_table, tokens, .{ .token = token_pattern.token_type });
+        _ = insert_tokens(token_type, 0, false, &jump_table, tokens, &.{}, .{ .token = token_pattern.token_type });
     }
 
-    expand_jump_table(token_type, &jump_table, 0, null);
+    expand_jump_table_fallthrough(token_type, &jump_table, 0, null);
+    expand_jump_table_sequences(token_type, &jump_table, 0);
 
     var static_table = ArrayList(StaticTable(token_type)).init();
     for (jump_table.get()) |table| {
@@ -546,7 +764,7 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
                         },
                         .both => |both| {
                             try std.fmt.format(writer, "  {s} -> {} [label=\"{s}\"];\n", .{ start, both.next, buffer });
-                            try std.fmt.format(writer, "  {} -> \"{}\" [label=leaf color=blue];\n", .{ both.next, both.leaf });
+                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"{s} leaf\" color=blue];\n", .{ both.next, both.leaf, buffer });
                         },
                     }
                 }
@@ -567,7 +785,7 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
                         },
                         .both => |both| {
                             try std.fmt.format(writer, "  {s} -> {} [label=\"{s}\" color=orange];\n", .{ start, both.next, buffer });
-                            try std.fmt.format(writer, "  {} -> \"{}\" [label=leaf color=green];\n", .{ both.next, both.leaf });
+                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"{s} leaf\" color=green];\n", .{ both.next, both.leaf, buffer });
                         },
                     }
                 }
@@ -591,7 +809,7 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
                         },
                         .both => |both| {
                             try std.fmt.format(writer, "  {s} -> {} [label=\"{s}\" color=red];\n", .{ start, both.next, buffer });
-                            try std.fmt.format(writer, "  {} -> \"{}\" [label=leaf color=purple];\n", .{ both.next, both.leaf });
+                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"{s} leaf\" color=purple];\n", .{ both.next, both.leaf, buffer });
                         },
                     }
                 }

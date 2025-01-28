@@ -62,6 +62,10 @@ pub fn Map(K: type, V: type) type {
             return false;
         }
 
+        pub fn len(self: *const Self) usize {
+            return self.keys.len();
+        }
+
         pub fn get(self: *const Self, key: K) ?V {
             const values = self.values.get();
             for (self.keys.get(), 0..) |k, i| {
@@ -73,15 +77,25 @@ pub fn Map(K: type, V: type) type {
             return null;
         }
 
+        pub fn at(self: *Self, key: K) *V {
+            for (self.keys.get(), 0..) |k, i| {
+                if (key == k) {
+                    return self.values.at(i);
+                }
+            }
+
+            unreachable;
+        }
+
         pub fn keys_iter(self: *const Self) []K {
             return self.keys.get();
         }
 
         pub fn compile(self: *const Self) StaticMap(K, V) {
-            const len = self.keys.len();
+            const length = self.keys.len();
 
-            var keys: [len]K = undefined;
-            var values: [len]V = undefined;
+            var keys: [length]K = undefined;
+            var values: [length]V = undefined;
 
             for (self.keys.get(), self.values.get(), 0..) |key, value, i| {
                 keys[i] = key;
@@ -91,7 +105,7 @@ pub fn Map(K: type, V: type) type {
             const const_keys = keys;
             const const_values = values;
             return .{
-                .len = len,
+                .len = length,
                 .keys = &const_keys,
                 .values = &const_values,
             };

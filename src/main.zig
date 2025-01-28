@@ -13,6 +13,8 @@ const TokenType = enum {
     String,
     Newline,
     Ident,
+    For,
+    Number,
 };
 
 const token_patterns = [_]lexer.TokenPattern(TokenType){
@@ -22,6 +24,8 @@ const token_patterns = [_]lexer.TokenPattern(TokenType){
     .{ .token_type = .String, .pattern = "\"([^\"]|\\\\\")*\"" },
     .{ .token_type = .Newline, .pattern = "(\n|\r\n)" },
     .{ .token_type = .Ident, .pattern = "\\w\\W*" },
+    .{ .token_type = .For, .pattern = "for" },
+    .{ .token_type = .Number, .pattern = "\\0+(.\\0+)?" },
 };
 
 pub fn main() !void {

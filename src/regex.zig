@@ -194,6 +194,7 @@ const Parser = struct {
             switch (char) {
                 'w' => return self.next_sequence('w'),
                 'W' => return self.next_sequence('W'),
+                '0' => return self.next_sequence('0'),
                 '\\' => return self.next_char('\\'),
                 else => {
                     var buffer: [4]u8 = undefined;

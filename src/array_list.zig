@@ -39,7 +39,7 @@ pub fn ArrayList(typ: type) type {
 
         pub fn len(self: *const Self) usize {
             // @setEvalBranchQuota(100000);
-            @setEvalBranchQuota(10 * self.contents.len * std.math.log2_int_ceil(usize, self.contents.len));
+            // @setEvalBranchQuota(10 * self.contents.len * std.math.log2_int_ceil(usize, self.contents.len));
 
             var l: usize = 0;
             for (self.contents) |item| {
@@ -101,6 +101,16 @@ pub fn ArrayList(typ: type) type {
             }
 
             return out[0..];
+        }
+
+        pub fn has(self: *const Self, item: typ) bool {
+            for (0..self.len()) |i| {
+                if (self.contents[i] orelse unreachable == item) {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         pub fn get_static(self: *const Self) [*]const typ {
