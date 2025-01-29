@@ -9,7 +9,6 @@ const StaticMap = map.StaticMap;
 pub fn Token(token_type: type) type {
     return struct {
         token_type: token_type,
-        value: []const u8,
     };
 }
 
@@ -53,6 +52,13 @@ const FallthroughChar = union(enum) {
                     .sequence => |b| return a == b,
                 }
             },
+        }
+    }
+
+    pub fn match(self: Self, c: u21) bool {
+        switch (self) {
+            .char => |char| return char == c,
+            .sequence => |seq| return match_sequence(seq, c),
         }
     }
 };
@@ -524,8 +530,9 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
     return struct {
         const Self = @This();
 
+        const static_jump_table = compile_static_jump_map(token_type, token_patterns);
+
         pub fn to_graph(writer: anytype, allocator: std.mem.Allocator) !void {
-            const static_jump_table = comptime compile_static_jump_map(token_type, token_patterns);
             try std.fmt.format(writer, "digraph {{\n", .{});
 
             for (0..static_jump_table.len) |i| {
@@ -601,18 +608,104 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
             try std.fmt.format(writer, "}}\n", .{});
         }
 
-        pub fn lex(allocator: std.mem.Allocator, input: []const u8) !std.ArrayList(Token(token_type)) {
+        pub fn lex(allocator: std.mem.Allocator, input: []const u8) ![]Token(token_type) {
             var out = std.ArrayList(Token(token_type)).init(allocator);
-            for (token_patterns) |t| {
-                if (std.mem.eql(u8, t.pattern, input)) {
-                    try out.append(.{
-                        .token_type = t.token_type,
-                        .value = input,
-                    });
+            defer out.deinit();
+
+            var i: usize = 0;
+            var table_idx: usize = 0;
+            var leaf: ?token_type = null;
+            outer: while (i < input.len) : (i += 1) {
+                const table = static_jump_table.table[table_idx];
+                const char = input[i];
+
+                for (0..table.table.len) |char_idx| {
+                    const char_key = table.table.keys[char_idx];
+                    if (char_key != char) {
+                        continue;
+                    }
+
+                    const char_node = table.table.values[char_idx];
+                    if (char_node.next) |next| {
+                        table_idx = next;
+                        leaf = char_node.leaf;
+                    } else {
+                        if (char_node.leaf) |char_leaf| {
+                            try out.append(.{ .token_type = char_leaf });
+
+                            table_idx = 0;
+                            leaf = null;
+                        } else {
+                            unreachable;
+                        }
+                    }
+
+                    continue :outer;
                 }
+
+                for (0..table.sequences.len) |seq_idx| {
+                    const seq_key = table.sequences.keys[seq_idx];
+                    if (!match_sequence(seq_key, char)) {
+                        continue;
+                    }
+
+                    const seq_node = table.sequences.values[seq_idx];
+                    if (seq_node.next) |next| {
+                        table_idx = next;
+                        leaf = seq_node.leaf;
+                    } else {
+                        if (seq_node.leaf) |seq_leaf| {
+                            try out.append(.{ .token_type = seq_leaf });
+
+                            table_idx = 0;
+                            leaf = null;
+                        } else {
+                            unreachable;
+                        }
+                    }
+
+                    continue :outer;
+                }
+
+                if (table.fallthrough) |fallthrough| {
+                    if (!fallthrough.value.match(char)) {
+                        const fallthrough_node = fallthrough.next;
+                        if (fallthrough_node.next) |next| {
+                            table_idx = next;
+                            leaf = fallthrough_node.leaf;
+                        } else {
+                            if (fallthrough_node.leaf) |fallthrough_leaf| {
+                                try out.append(.{ .token_type = fallthrough_leaf });
+
+                                table_idx = 0;
+                                leaf = null;
+                            } else {
+                                unreachable;
+                            }
+                        }
+
+                        continue :outer;
+                    }
+                }
+
+                if (leaf) |l| {
+                    try out.append(.{ .token_type = l });
+
+                    table_idx = 0;
+                    leaf = null;
+                    i -= 1;
+
+                    continue :outer;
+                }
+
+                return error.invalidInput;
             }
 
-            return out;
+            if (leaf) |l| {
+                try out.append(.{ .token_type = l });
+            }
+
+            return out.toOwnedSlice();
         }
     };
 }

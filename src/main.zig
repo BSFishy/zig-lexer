@@ -40,8 +40,12 @@ pub fn main() !void {
 
     const l = Lexer(TokenType, &token_patterns);
 
-    const stdout = std.io.getStdOut().writer();
-    try l.to_graph(stdout, allocator);
+    const tokens = try l.lex(allocator, "example/for/func/1.0/1//test");
+    defer allocator.free(tokens);
+
+    for (tokens) |token| {
+        std.debug.print("{}\n", .{token.token_type});
+    }
 }
 
 test "simple test" {
