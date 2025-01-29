@@ -419,6 +419,18 @@ fn expand_jump_table_sequences(token_type: type, jump_table: *JumpTable(token_ty
 
                         next_table.merge(next_seq_table, jump_table, seq_next);
                     }
+                } else {
+                    if (seq_node.next) |seq_next| {
+                        const next_seq_table = jump_table.at(seq_next);
+
+                        const idx = jump_table.len();
+                        jump_table.append(Table(token_type).init());
+
+                        node.next = idx;
+
+                        var next_table = jump_table.at(idx);
+                        next_table.merge(next_seq_table, jump_table, seq_next);
+                    }
                 }
             }
         }
@@ -534,7 +546,7 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
 
                     if (value.leaf) |leaf| {
                         if (value.next) |next| {
-                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"{s} leaf\" color=blue];\n", .{ next, leaf, buffer });
+                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"super {s} leaf\" color=blue];\n", .{ next, leaf, buffer });
                         } else {
                             try std.fmt.format(writer, "  {s} -> \"{}\" [label=\"{s} leaf\" color=blue];\n", .{ start, leaf, buffer });
                         }
@@ -554,7 +566,7 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
 
                     if (value.leaf) |leaf| {
                         if (value.next) |next| {
-                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"{s} leaf\" color=green];\n", .{ next, leaf, buffer });
+                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"super {s} leaf\" color=green];\n", .{ next, leaf, buffer });
                         } else {
                             try std.fmt.format(writer, "  {s} -> \"{}\" [label=\"{s} leaf\" color=green];\n", .{ start, leaf, buffer });
                         }
@@ -578,7 +590,7 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
 
                     if (value.leaf) |leaf| {
                         if (value.next) |next| {
-                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"{s} leaf\" color=purple];\n", .{ next, leaf, buffer });
+                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"super {s} leaf\" color=purple];\n", .{ next, leaf, buffer });
                         } else {
                             try std.fmt.format(writer, "  {s} -> \"{}\" [label=\"{s} leaf\" color=purple];\n", .{ start, leaf, buffer });
                         }
