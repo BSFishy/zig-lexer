@@ -88,7 +88,7 @@ pub fn ArrayList(typ: type) type {
             self.contents[index] = item;
         }
 
-        pub fn insert(self: *Self, other: []typ) void {
+        pub fn insert(self: *Self, other: []const typ) void {
             for (other) |item| {
                 self.append(item);
             }
