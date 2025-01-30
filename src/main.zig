@@ -39,11 +39,11 @@ pub fn main() !void {
         return;
     }
 
-    const tokens = try l.lex(allocator, "example/for/fortif\nication/\"test example\"1.0/1//test");
+    const tokens = try l.lex(allocator, "example/for/fortif\nication/\"test example\"1.0/");
     defer allocator.free(tokens);
 
     for (tokens) |token| {
-        std.debug.print("{}\n", .{std.meta.activeTag(token)});
+        std.debug.print("{} - {s}\n", .{ token.token_type, token.source });
     }
 }
 
