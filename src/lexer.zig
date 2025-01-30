@@ -6,18 +6,10 @@ const map = @import("map.zig");
 const Map = map.Map;
 const StaticMap = map.StaticMap;
 
-pub fn Token(token_type: type) type {
-    return struct {
-        token_type: token_type,
-    };
-}
-
-pub fn TokenPattern(token_type: type) type {
-    return struct {
-        token_type: token_type,
-        pattern: []const u8,
-    };
-}
+pub const TokenPattern = struct {
+    name: []const u8,
+    pattern: []const u8,
+};
 
 fn Node(token_type: type) type {
     return struct {
@@ -485,7 +477,7 @@ fn match_sequence(sequence: u21, key: u21) bool {
     }
 }
 
-fn compile_static_jump_map(token_type: type, comptime token_patterns: []const TokenPattern(token_type)) StaticJumpTable(token_type) {
+fn compile_static_jump_map(comptime token_patterns: []const TokenPattern, comptime TokenType: type) StaticJumpTable(TokenType) {
     if (!@inComptime()) {
         @compileError("This function must be executed at compile time.");
     }
@@ -494,19 +486,19 @@ fn compile_static_jump_map(token_type: type, comptime token_patterns: []const To
 
     @setEvalBranchQuota(token_patterns.len * 10000);
 
-    var jump_table = JumpTable(token_type).init();
+    var jump_table = JumpTable(TokenType).init();
     for (token_patterns) |token_pattern| {
         const tokens = regex.parsePattern(token_pattern.pattern) catch |err| @compileError(err);
-        const nodes = insert_tokens(token_type, 0, false, &jump_table, tokens, &.{}, null);
+        const nodes = insert_tokens(TokenType, 0, false, &jump_table, tokens, &.{}, null);
         for (nodes) |node| {
-            node.leaf = token_pattern.token_type;
+            node.leaf = @unionInit(TokenType, token_pattern.name, undefined);
         }
     }
 
-    expand_jump_table_fallthrough(token_type, &jump_table, 0, null);
-    expand_jump_table_sequences(token_type, &jump_table, 0);
+    expand_jump_table_fallthrough(TokenType, &jump_table, 0, null);
+    expand_jump_table_sequences(TokenType, &jump_table, 0);
 
-    var static_table = ArrayList(StaticTable(token_type)).init();
+    var static_table = ArrayList(StaticTable(TokenType)).init();
     for (jump_table.get()) |table| {
         static_table.append(.{
             .table = table.table.compile(),
@@ -524,11 +516,52 @@ fn compile_static_jump_map(token_type: type, comptime token_patterns: []const To
     };
 }
 
-pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(token_type)) type {
+fn compile_token_type(comptime token_patterns: []const TokenPattern) type {
+    var union_fields = ArrayList(std.builtin.Type.UnionField).init();
+    var enum_fields = ArrayList(std.builtin.Type.EnumField).init();
+    for (token_patterns, 0..) |pattern, i| {
+        var name: [pattern.name.len:0]u8 = undefined;
+        for (pattern.name, 0..) |char, idx| {
+            name[idx] = char;
+        }
+
+        union_fields.append(.{
+            .name = &name,
+            .type = void,
+            .alignment = @alignOf(void),
+        });
+
+        enum_fields.append(.{
+            .name = &name,
+            .value = i,
+        });
+    }
+
+    const tag = @Type(.{
+        .Enum = .{
+            .tag_type = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = @ceil(@log2(@as(f32, token_patterns.len))) } }),
+            .fields = enum_fields.get(),
+            .decls = &.{},
+            .is_exhaustive = true,
+        },
+    });
+
+    return @Type(.{
+        .Union = .{
+            .layout = .auto,
+            .tag_type = tag,
+            .fields = union_fields.get(),
+            .decls = &.{},
+        },
+    });
+}
+
+pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
     return struct {
         const Self = @This();
 
-        const static_jump_table = compile_static_jump_map(token_type, token_patterns);
+        const TokenType = compile_token_type(token_patterns);
+        const static_jump_table = compile_static_jump_map(token_patterns, TokenType);
 
         pub fn to_graph(writer: anytype, allocator: std.mem.Allocator) !void {
             try std.fmt.format(writer, "digraph {{\n", .{});
@@ -551,9 +584,9 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
 
                     if (value.leaf) |leaf| {
                         if (value.next) |next| {
-                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"super {s} leaf\" color=blue];\n", .{ next, leaf, buffer });
+                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"super {s} leaf\" color=blue];\n", .{ next, std.meta.activeTag(leaf), buffer });
                         } else {
-                            try std.fmt.format(writer, "  {s} -> \"{}\" [label=\"{s} leaf\" color=blue];\n", .{ start, leaf, buffer });
+                            try std.fmt.format(writer, "  {s} -> \"{}\" [label=\"{s} leaf\" color=blue];\n", .{ start, std.meta.activeTag(leaf), buffer });
                         }
                     }
                 }
@@ -571,9 +604,9 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
 
                     if (value.leaf) |leaf| {
                         if (value.next) |next| {
-                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"super {s} leaf\" color=green];\n", .{ next, leaf, buffer });
+                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"super {s} leaf\" color=green];\n", .{ next, std.meta.activeTag(leaf), buffer });
                         } else {
-                            try std.fmt.format(writer, "  {s} -> \"{}\" [label=\"{s} leaf\" color=green];\n", .{ start, leaf, buffer });
+                            try std.fmt.format(writer, "  {s} -> \"{}\" [label=\"{s} leaf\" color=green];\n", .{ start, std.meta.activeTag(leaf), buffer });
                         }
                     }
                 }
@@ -595,9 +628,9 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
 
                     if (value.leaf) |leaf| {
                         if (value.next) |next| {
-                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"super {s} leaf\" color=purple];\n", .{ next, leaf, buffer });
+                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"super {s} leaf\" color=purple];\n", .{ next, std.meta.activeTag(leaf), buffer });
                         } else {
-                            try std.fmt.format(writer, "  {s} -> \"{}\" [label=\"{s} leaf\" color=purple];\n", .{ start, leaf, buffer });
+                            try std.fmt.format(writer, "  {s} -> \"{}\" [label=\"{s} leaf\" color=purple];\n", .{ start, std.meta.activeTag(leaf), buffer });
                         }
                     }
                 }
@@ -606,13 +639,13 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
             try std.fmt.format(writer, "}}\n", .{});
         }
 
-        pub fn lex(allocator: std.mem.Allocator, input: []const u8) ![]Token(token_type) {
-            var out = std.ArrayList(Token(token_type)).init(allocator);
+        pub fn lex(allocator: std.mem.Allocator, input: []const u8) ![]TokenType {
+            var out = std.ArrayList(TokenType).init(allocator);
             defer out.deinit();
 
             var i: usize = 0;
             var table_idx: usize = 0;
-            var leaf: ?token_type = null;
+            var leaf: ?TokenType = null;
             outer: while (i < input.len) : (i += 1) {
                 const table = static_jump_table.table[table_idx];
                 const char = input[i];
@@ -629,7 +662,7 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
                         leaf = char_node.leaf;
                     } else {
                         if (char_node.leaf) |char_leaf| {
-                            try out.append(.{ .token_type = char_leaf });
+                            try out.append(char_leaf);
 
                             table_idx = 0;
                             leaf = null;
@@ -653,7 +686,7 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
                         leaf = seq_node.leaf;
                     } else {
                         if (seq_node.leaf) |seq_leaf| {
-                            try out.append(.{ .token_type = seq_leaf });
+                            try out.append(seq_leaf);
 
                             table_idx = 0;
                             leaf = null;
@@ -673,7 +706,7 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
                             leaf = fallthrough_node.leaf;
                         } else {
                             if (fallthrough_node.leaf) |fallthrough_leaf| {
-                                try out.append(.{ .token_type = fallthrough_leaf });
+                                try out.append(fallthrough_leaf);
 
                                 table_idx = 0;
                                 leaf = null;
@@ -687,7 +720,7 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
                 }
 
                 if (leaf) |l| {
-                    try out.append(.{ .token_type = l });
+                    try out.append(l);
 
                     table_idx = 0;
                     leaf = null;
@@ -700,7 +733,7 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
             }
 
             const l = leaf orelse return error.invalidInput;
-            try out.append(.{ .token_type = l });
+            try out.append(l);
 
             return out.toOwnedSlice();
         }

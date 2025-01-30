@@ -6,26 +6,15 @@ const ArrayList = @import("array_list.zig").ArrayList;
 
 pub const Lexer = lexer.Lexer;
 
-const TokenType = enum {
-    Comment,
-    Division,
-    Func,
-    String,
-    Newline,
-    Ident,
-    For,
-    Number,
-};
-
-const token_patterns = [_]lexer.TokenPattern(TokenType){
-    .{ .token_type = .Comment, .pattern = "//([^\n])*" },
-    .{ .token_type = .Division, .pattern = "/" },
-    .{ .token_type = .Func, .pattern = "func" },
-    .{ .token_type = .String, .pattern = "\"([^\"]|\\\\\")*\"" },
-    .{ .token_type = .Newline, .pattern = "(\n|\r\n)" },
-    .{ .token_type = .Ident, .pattern = "\\w\\W*" },
-    .{ .token_type = .For, .pattern = "for" },
-    .{ .token_type = .Number, .pattern = "\\0+(.\\0+)?" },
+const token_patterns = [_]lexer.TokenPattern{
+    .{ .name = "Comment", .pattern = "//([^\n])*" },
+    .{ .name = "Division", .pattern = "/" },
+    .{ .name = "Func", .pattern = "func" },
+    .{ .name = "String", .pattern = "\"([^\"]|\\\\\")*\"" },
+    .{ .name = "Newline", .pattern = "(\n|\r\n)" },
+    .{ .name = "Ident", .pattern = "\\w\\W*" },
+    .{ .name = "For", .pattern = "for" },
+    .{ .name = "Number", .pattern = "\\0+(.\\0+)?" },
 };
 
 pub fn main() !void {
@@ -38,7 +27,7 @@ pub fn main() !void {
         }
     }
 
-    const l = Lexer(TokenType, &token_patterns);
+    const l = Lexer(&token_patterns);
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
@@ -50,11 +39,11 @@ pub fn main() !void {
         return;
     }
 
-    const tokens = try l.lex(allocator, "example/for/fortification/\"test example\"1.0/1//test");
+    const tokens = try l.lex(allocator, "example/for/fortif\nication/\"test example\"1.0/1//test");
     defer allocator.free(tokens);
 
     for (tokens) |token| {
-        std.debug.print("{}\n", .{token.token_type});
+        std.debug.print("{}\n", .{std.meta.activeTag(token)});
     }
 }
 
