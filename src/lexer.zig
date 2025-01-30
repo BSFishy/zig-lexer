@@ -285,15 +285,13 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                     return new_parents.get();
                 },
                 .ZeroOrMore => {
-                    var sub_tokens: [children.len + 1]regex.Token = undefined;
-                    sub_tokens[0] = quant.inner.*;
-                    for (children, 1..) |c, i| {
-                        sub_tokens[i] = c;
-                    }
-
                     var new_parents = ArrayList(*Node(token_type)).init();
-                    new_parents.insert(insert_tokens(token_type, index, invert, jump_table, &sub_tokens, parents, index));
+                    new_parents.insert(insert_tokens(token_type, index, invert, jump_table, &.{quant.inner.*}, parents, index));
                     new_parents.insert(parents);
+
+                    if (children.len > 0) {
+                        return insert_tokens(token_type, index, invert, jump_table, children, parents, next);
+                    }
 
                     return new_parents.get();
                 },
@@ -701,9 +699,8 @@ pub fn Lexer(token_type: type, comptime token_patterns: []const TokenPattern(tok
                 return error.invalidInput;
             }
 
-            if (leaf) |l| {
-                try out.append(.{ .token_type = l });
-            }
+            const l = leaf orelse return error.invalidInput;
+            try out.append(.{ .token_type = l });
 
             return out.toOwnedSlice();
         }

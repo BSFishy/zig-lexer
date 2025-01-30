@@ -40,7 +40,17 @@ pub fn main() !void {
 
     const l = Lexer(TokenType, &token_patterns);
 
-    const tokens = try l.lex(allocator, "example/for/func/1.0/1//test");
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    if (includes(args, "tree")) {
+        const writer = std.io.getStdOut().writer();
+        try l.to_graph(writer, allocator);
+
+        return;
+    }
+
+    const tokens = try l.lex(allocator, "example/for/fortification/\"test example\"1.0/1//test");
     defer allocator.free(tokens);
 
     for (tokens) |token| {
@@ -48,9 +58,12 @@ pub fn main() !void {
     }
 }
 
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
+fn includes(haystack: []const []const u8, needle: []const u8) bool {
+    for (haystack) |item| {
+        if (std.mem.eql(u8, item, needle)) {
+            return true;
+        }
+    }
+
+    return false;
 }
