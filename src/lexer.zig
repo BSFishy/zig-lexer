@@ -642,8 +642,8 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
     return struct {
         const Self = @This();
 
-        const Token = compile_token_type(token_patterns);
-        const TokenType = Token.Tag;
+        pub const Token = compile_token_type(token_patterns);
+        pub const TokenType = Token.Tag;
         const static_jump_table = compile_static_jump_map(token_patterns, TokenType);
 
         allocator: std.mem.Allocator,

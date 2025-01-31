@@ -3,12 +3,15 @@ const lexer = @import("lexer.zig");
 const regex = @import("regex.zig");
 const ArrayList = @import("array_list.zig").ArrayList;
 
-pub const Lexer = lexer.Lexer;
-
+pub const Lexer = lexer.Lexer(&token_patterns);
 const token_patterns = [_]lexer.TokenPattern{
     .{ .name = "Comment", .pattern = "//([^\n])*" },
     .{ .name = "Division", .pattern = "/" },
     .{ .name = "Func", .pattern = "func" },
+    .{ .name = "Let", .pattern = "let" },
+    .{ .name = "If", .pattern = "if" },
+    .{ .name = "Else", .pattern = "else" },
+    .{ .name = "Return", .pattern = "return" },
     .{ .name = "String", .pattern = "\"([^\"]|\\\\\")*\"" },
     .{ .name = "Newline", .pattern = "(\n|\r\n)" },
     .{ .name = "Ident", .pattern = "\\w\\W*" },
@@ -41,7 +44,7 @@ pub fn main() !void {
         }
     }
 
-    var l = Lexer(&token_patterns).init(allocator);
+    var l = Lexer.init(allocator);
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
@@ -80,17 +83,31 @@ pub fn main() !void {
     defer allocator.free(tokens);
 
     for (tokens) |token| {
-        std.debug.print("{} - ", .{
-            token.token_type,
-        });
+        printColorForToken(token.token_type);
 
         for (token.source) |char| {
             var buffer: [4]u8 = undefined;
             _ = try std.unicode.utf8Encode(char, &buffer);
             std.debug.print("{s}", .{buffer});
         }
+    }
+}
 
-        std.debug.print("\n", .{});
+fn printColorForToken(token: Lexer.TokenType) void {
+    switch (token) {
+        .Comment => std.debug.print("\x1B[0m\x1B[2m", .{}),
+
+        .String => std.debug.print("\x1B[0m\x1B[32m", .{}),
+
+        .Newline, .Space => {},
+
+        .Ident => std.debug.print("\x1B[0m\x1B[34m", .{}),
+
+        .Func, .For, .While, .If, .Else, .Return, .Let => std.debug.print("\x1B[0m\x1B[31m", .{}),
+
+        .Number => std.debug.print("\x1B[0m\x1B[35m", .{}),
+
+        .Division, .LParen, .RParen, .Comma, .LBrace, .RBrace, .Minus, .Semicolon, .Equal, .Plus, .GT, .LT, .GE, .LE => std.debug.print("\x1B[0m\x1B[36m", .{}),
     }
 }
 
