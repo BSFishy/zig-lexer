@@ -547,6 +547,69 @@ fn compile_token_type(comptime token_patterns: []const TokenPattern) type {
     };
 }
 
+fn findLineStart(input: []const u8, start: usize) usize {
+    var i = start;
+    while (i > 0 and input[i - 1] != '\n') : (i -= 1) {}
+
+    return i;
+}
+
+fn findLineEnd(input: []const u8, start: usize) usize {
+    var i = start;
+    while (i < input.len - 1 and input[i + 1] != '\r' and input[i + 1] != '\n') : (i += 1) {}
+
+    return i + 1;
+}
+
+fn renderErrorLine(allocator: std.mem.Allocator, line_start: usize, failure_pos: usize) ![]u8 {
+    var line = std.ArrayList(u8).init(allocator);
+
+    var i = line_start;
+    while (i < failure_pos) : (i += 1) {
+        try line.append(' ');
+    }
+
+    try line.append('^');
+    return line.toOwnedSlice();
+}
+
+pub const Failure = struct {
+    const Self = @This();
+
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    pos: usize,
+
+    pub fn print(self: *const Self) !void {
+        const line_start = findLineStart(self.input, self.pos);
+        const line_end = findLineEnd(self.input, self.pos);
+        const line = self.input[line_start..line_end];
+
+        std.debug.print("unexpected input:\n", .{});
+        std.debug.print("{s}\n", .{line});
+
+        const error_line = try renderErrorLine(self.allocator, line_start, self.pos);
+        defer self.allocator.free(error_line);
+
+        std.debug.print("{s}\n", .{error_line});
+    }
+};
+
+pub const Diagnostics = struct {
+    failure: ?Failure = null,
+};
+
+pub const LexerOptions = struct {
+    const Self = @This();
+
+    diagnostics: ?*Diagnostics = null,
+
+    fn fill_failure(self: *const Self, failure: ?Failure) void {
+        var diag = self.diagnostics orelse return;
+        diag.failure = failure;
+    }
+};
+
 pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
     return struct {
         const Self = @This();
@@ -555,20 +618,28 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
         const TokenType = Token.Tag;
         const static_jump_table = compile_static_jump_map(token_patterns, TokenType);
 
-        pub fn to_graph(writer: anytype, allocator: std.mem.Allocator) !void {
+        allocator: std.mem.Allocator,
+
+        pub fn init(allocator: std.mem.Allocator) Self {
+            return .{
+                .allocator = allocator,
+            };
+        }
+
+        pub fn to_graph(self: *const Self, writer: anytype) !void {
             try std.fmt.format(writer, "digraph {{\n", .{});
 
             for (0..static_jump_table.len) |i| {
-                const start = if (i == 0) try allocator.dupe(u8, "start") else try std.fmt.allocPrint(allocator, "{}", .{i});
-                defer allocator.free(start);
+                const start = if (i == 0) try self.allocator.dupe(u8, "start") else try std.fmt.allocPrint(self.allocator, "{}", .{i});
+                defer self.allocator.free(start);
 
                 const static_table = static_jump_table.table[i];
                 for (0..static_table.table.len) |idx| {
                     const key_codepoint = static_table.table.keys[idx];
                     const value = static_table.table.values[idx];
 
-                    const buffer = try uft8ToString(allocator, key_codepoint, false);
-                    defer allocator.free(buffer);
+                    const buffer = try uft8ToString(self.allocator, key_codepoint, false);
+                    defer self.allocator.free(buffer);
 
                     if (value.next) |next| {
                         try std.fmt.format(writer, "  {s} -> {} [label=\"{s}\"];\n", .{ start, next, buffer });
@@ -587,8 +658,8 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
                     const key_codepoint = static_table.sequences.keys[idx];
                     const value = static_table.sequences.values[idx];
 
-                    const buffer = try uft8ToString(allocator, key_codepoint, true);
-                    defer allocator.free(buffer);
+                    const buffer = try uft8ToString(self.allocator, key_codepoint, true);
+                    defer self.allocator.free(buffer);
 
                     if (value.next) |next| {
                         try std.fmt.format(writer, "  {s} -> {} [label=\"{s}\" color=orange];\n", .{ start, next, buffer });
@@ -605,14 +676,14 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
 
                 if (static_table.fallthrough) |fallthrough| {
                     const value = fallthrough.next;
-                    const buffer = try uft8ToString(allocator, switch (fallthrough.value) {
+                    const buffer = try uft8ToString(self.allocator, switch (fallthrough.value) {
                         .char => |char| char,
                         .sequence => |char| char,
                     }, switch (fallthrough.value) {
                         .char => false,
                         .sequence => true,
                     });
-                    defer allocator.free(buffer);
+                    defer self.allocator.free(buffer);
 
                     if (value.next) |next| {
                         try std.fmt.format(writer, "  {s} -> {} [label=\"{s}\" color=red];\n", .{ start, next, buffer });
@@ -631,9 +702,11 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
             try std.fmt.format(writer, "}}\n", .{});
         }
 
-        pub fn lex(allocator: std.mem.Allocator, input: []const u8) ![]Token {
-            var out = std.ArrayList(Token).init(allocator);
+        pub fn lex(self: *Self, input: []const u8, opts: LexerOptions) ![]Token {
+            var out = std.ArrayList(Token).init(self.allocator);
             defer out.deinit();
+
+            opts.fill_failure(null);
 
             var i: usize = 0;
             var table_idx: usize = 0;
@@ -738,10 +811,23 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
                     continue :outer;
                 }
 
+                opts.fill_failure(.{
+                    .allocator = self.allocator,
+                    .input = input,
+                    .pos = start,
+                });
                 return error.invalidInput;
             }
 
-            const l = leaf orelse return error.invalidInput;
+            const l = leaf orelse {
+                opts.fill_failure(.{
+                    .allocator = self.allocator,
+                    .input = input,
+                    .pos = start,
+                });
+                return error.invalidInput;
+            };
+
             try out.append(.{
                 .token_type = l,
                 .source = input[start..i],

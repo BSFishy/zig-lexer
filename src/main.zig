@@ -1,7 +1,6 @@
 const std = @import("std");
 const lexer = @import("lexer.zig");
 const regex = @import("regex.zig");
-const Node = @import("node.zig").Node;
 const ArrayList = @import("array_list.zig").ArrayList;
 
 pub const Lexer = lexer.Lexer;
@@ -27,19 +26,26 @@ pub fn main() !void {
         }
     }
 
-    const l = Lexer(&token_patterns);
+    var l = Lexer(&token_patterns).init(allocator);
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
     if (includes(args, "tree")) {
         const writer = std.io.getStdOut().writer();
-        try l.to_graph(writer, allocator);
+        try l.to_graph(writer);
 
         return;
     }
 
-    const tokens = try l.lex(allocator, "example/for/fortif\nication/\"test example\"1.0/");
+    var diag: lexer.Diagnostics = .{};
+    const tokens = l.lex("example/for/fortif\nication/\"test example\"1.0/asdf", .{
+        .diagnostics = &diag,
+    }) catch {
+        const failure = diag.failure orelse unreachable;
+        try failure.print();
+        std.process.exit(1);
+    };
     defer allocator.free(tokens);
 
     for (tokens) |token| {
