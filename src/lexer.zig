@@ -193,7 +193,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                 @compileError("unimplemented");
             }
 
-            if (table.get(c)) |v| {
+            if (table.table.get_mut(c)) |v| {
                 if (children.len == 0) {
                     if (next == null or v.next == next) {
                         return &.{table.table.at(c)};
@@ -202,7 +202,15 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                     @compileError("unimplemented");
                 }
 
-                return insert_tokens(token_type, v.next orelse unreachable, invert, jump_table, children, &.{table.table.at(c)}, next);
+                if (v.next) |next_table| {
+                    return insert_tokens(token_type, next_table, invert, jump_table, children, &.{table.table.at(c)}, next);
+                }
+
+                const idx = jump_table.len();
+                jump_table.append(Table(token_type).init());
+
+                v.next = idx;
+                return insert_tokens(token_type, idx, invert, jump_table, children, &.{table.table.at(c)}, next);
             }
 
             if (children.len == 0) {
@@ -543,18 +551,30 @@ fn compile_token_type(comptime token_patterns: []const TokenPattern) type {
         const Tag = tag;
 
         token_type: tag,
-        source: []const u8,
+        source: []const u21,
     };
 }
 
-fn findLineStart(input: []const u8, start: usize) usize {
+fn findLineNumber(input: []const u21, start: usize) usize {
+    var line_number: usize = 1;
+    var i = start;
+    while (i > 0) : (i -= 1) {
+        if (input[i - 1] == '\n') {
+            line_number += 1;
+        }
+    }
+
+    return line_number;
+}
+
+fn findLineStart(input: []const u21, start: usize) usize {
     var i = start;
     while (i > 0 and input[i - 1] != '\n') : (i -= 1) {}
 
     return i;
 }
 
-fn findLineEnd(input: []const u8, start: usize) usize {
+fn findLineEnd(input: []const u21, start: usize) usize {
     var i = start;
     while (i < input.len - 1 and input[i + 1] != '\r' and input[i + 1] != '\n') : (i += 1) {}
 
@@ -563,6 +583,7 @@ fn findLineEnd(input: []const u8, start: usize) usize {
 
 fn renderErrorLine(allocator: std.mem.Allocator, line_start: usize, failure_pos: usize) ![]u8 {
     var line = std.ArrayList(u8).init(allocator);
+    try line.appendSlice("        ");
 
     var i = line_start;
     while (i < failure_pos) : (i += 1) {
@@ -577,21 +598,28 @@ pub const Failure = struct {
     const Self = @This();
 
     allocator: std.mem.Allocator,
-    input: []const u8,
+    input: []const u21,
     pos: usize,
 
     pub fn print(self: *const Self) !void {
         const line_start = findLineStart(self.input, self.pos);
         const line_end = findLineEnd(self.input, self.pos);
-        const line = self.input[line_start..line_end];
+        const line_number = findLineNumber(self.input, self.pos);
 
         std.debug.print("unexpected input:\n", .{});
-        std.debug.print("{s}\n", .{line});
+        std.debug.print(" {d: >4} | ", .{line_number});
+
+        const input = self.input[line_start..line_end];
+        for (input) |char| {
+            var buffer: [4]u8 = undefined;
+            _ = try std.unicode.utf8Encode(char, &buffer);
+            std.debug.print("{s}", .{buffer});
+        }
 
         const error_line = try renderErrorLine(self.allocator, line_start, self.pos);
         defer self.allocator.free(error_line);
 
-        std.debug.print("{s}\n", .{error_line});
+        std.debug.print("\n{s}\n", .{error_line});
     }
 };
 
@@ -702,7 +730,7 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
             try std.fmt.format(writer, "}}\n", .{});
         }
 
-        pub fn lex(self: *Self, input: []const u8, opts: LexerOptions) ![]Token {
+        pub fn lex(self: *Self, input: []const u21, opts: LexerOptions) ![]Token {
             var out = std.ArrayList(Token).init(self.allocator);
             defer out.deinit();
 
@@ -819,19 +847,12 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
                 return error.invalidInput;
             }
 
-            const l = leaf orelse {
-                opts.fill_failure(.{
-                    .allocator = self.allocator,
-                    .input = input,
-                    .pos = start,
+            if (leaf) |l| {
+                try out.append(.{
+                    .token_type = l,
+                    .source = input[start..i],
                 });
-                return error.invalidInput;
-            };
-
-            try out.append(.{
-                .token_type = l,
-                .source = input[start..i],
-            });
+            }
 
             return out.toOwnedSlice();
         }

@@ -13,7 +13,22 @@ const token_patterns = [_]lexer.TokenPattern{
     .{ .name = "Newline", .pattern = "(\n|\r\n)" },
     .{ .name = "Ident", .pattern = "\\w\\W*" },
     .{ .name = "For", .pattern = "for" },
+    .{ .name = "While", .pattern = "while" },
     .{ .name = "Number", .pattern = "\\0+(.\\0+)?" },
+    .{ .name = "Space", .pattern = " " },
+    .{ .name = "LParen", .pattern = "\\(" },
+    .{ .name = "RParen", .pattern = "\\)" },
+    .{ .name = "Comma", .pattern = "," },
+    .{ .name = "LBrace", .pattern = "{" },
+    .{ .name = "RBrace", .pattern = "}" },
+    .{ .name = "Plus", .pattern = "\\+" },
+    .{ .name = "Minus", .pattern = "-" },
+    .{ .name = "Semicolon", .pattern = ";" },
+    .{ .name = "Equal", .pattern = "=" },
+    .{ .name = "LT", .pattern = "<" },
+    .{ .name = "GT", .pattern = ">" },
+    .{ .name = "LE", .pattern = "<=" },
+    .{ .name = "GE", .pattern = ">=" },
 };
 
 pub fn main() !void {
@@ -38,8 +53,24 @@ pub fn main() !void {
         return;
     }
 
+    const contents = try blk: {
+        const input = try std.fs.cwd().readFileAlloc(allocator, "example.lang", 2 * 1024 * 1024 * 1024);
+        defer allocator.free(input);
+
+        const input_view = try std.unicode.Utf8View.init(input);
+
+        var contents = std.ArrayList(u21).init(allocator);
+        var iterator = input_view.iterator();
+        while (iterator.nextCodepoint()) |codepoint| {
+            try contents.append(codepoint);
+        }
+
+        break :blk contents.toOwnedSlice();
+    };
+    defer allocator.free(contents);
+
     var diag: lexer.Diagnostics = .{};
-    const tokens = l.lex("example/for/fortif\nication/\"test example\"1.0/asdf", .{
+    const tokens = l.lex(contents, .{
         .diagnostics = &diag,
     }) catch {
         const failure = diag.failure orelse unreachable;
@@ -49,7 +80,17 @@ pub fn main() !void {
     defer allocator.free(tokens);
 
     for (tokens) |token| {
-        std.debug.print("{} - {s}\n", .{ token.token_type, token.source });
+        std.debug.print("{} - ", .{
+            token.token_type,
+        });
+
+        for (token.source) |char| {
+            var buffer: [4]u8 = undefined;
+            _ = try std.unicode.utf8Encode(char, &buffer);
+            std.debug.print("{s}", .{buffer});
+        }
+
+        std.debug.print("\n", .{});
     }
 }
 

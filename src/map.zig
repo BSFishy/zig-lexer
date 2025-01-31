@@ -77,6 +77,16 @@ pub fn Map(K: type, V: type) type {
             return null;
         }
 
+        pub fn get_mut(self: *Self, key: K) ?*V {
+            for (self.keys.get(), 0..) |k, i| {
+                if (key == k) {
+                    return self.values.at(i);
+                }
+            }
+
+            return null;
+        }
+
         pub fn at(self: *Self, key: K) *V {
             for (self.keys.get(), 0..) |k, i| {
                 if (key == k) {

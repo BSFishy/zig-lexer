@@ -1,0 +1,24 @@
+// This is a comment in SimpleScript
+
+func add(a, b) {
+    return a + b;
+}
+
+let result = add(5, 3);
+
+if (result > 10) {
+    print("Result is greater than 10");
+} else {
+    print("Result is 10 or less");
+}
+
+while (result > 0) {
+    result -= 1;
+    print(result);
+}
+
+for (let i = 0; i < 10; i += 1) {
+    print(i);
+}
+
+print("𝄞mus�ic�");
