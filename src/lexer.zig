@@ -718,9 +718,9 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
 
                     if (value.leaf) |leaf| {
                         if (value.next) |next| {
-                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"super {s} leaf\" color=blue];\n", .{ next, leaf, buffer });
+                            try std.fmt.format(writer, "  {} -> {s} [label=\"super {s} leaf\" color=blue];\n", .{ next, @tagName(leaf), buffer });
                         } else {
-                            try std.fmt.format(writer, "  {s} -> \"{}\" [label=\"{s} leaf\" color=blue];\n", .{ start, leaf, buffer });
+                            try std.fmt.format(writer, "  {s} -> {s} [label=\"{s} leaf\" color=blue];\n", .{ start, @tagName(leaf), buffer });
                         }
                     }
                 }
@@ -738,9 +738,9 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
 
                     if (value.leaf) |leaf| {
                         if (value.next) |next| {
-                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"super {s} leaf\" color=green];\n", .{ next, leaf, buffer });
+                            try std.fmt.format(writer, "  {} -> {s} [label=\"super {s} leaf\" color=green];\n", .{ next, @tagName(leaf), buffer });
                         } else {
-                            try std.fmt.format(writer, "  {s} -> \"{}\" [label=\"{s} leaf\" color=green];\n", .{ start, leaf, buffer });
+                            try std.fmt.format(writer, "  {s} -> {s} [label=\"{s} leaf\" color=green];\n", .{ start, @tagName(leaf), buffer });
                         }
                     }
                 }
@@ -762,9 +762,9 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
 
                     if (value.leaf) |leaf| {
                         if (value.next) |next| {
-                            try std.fmt.format(writer, "  {} -> \"{}\" [label=\"super {s} leaf\" color=purple];\n", .{ next, leaf, buffer });
+                            try std.fmt.format(writer, "  {} -> {s} [label=\"super {s} leaf\" color=purple];\n", .{ next, @tagName(leaf), buffer });
                         } else {
-                            try std.fmt.format(writer, "  {s} -> \"{}\" [label=\"{s} leaf\" color=purple];\n", .{ start, leaf, buffer });
+                            try std.fmt.format(writer, "  {s} -> {s} [label=\"{s} leaf\" color=purple];\n", .{ start, @tagName(leaf), buffer });
                         }
                     }
                 }
