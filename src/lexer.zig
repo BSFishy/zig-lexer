@@ -619,13 +619,17 @@ fn findLineEnd(input: []const u21, start: usize) usize {
     return i + 1;
 }
 
-fn renderErrorLine(allocator: std.mem.Allocator, line_start: usize, failure_pos: usize) ![]u8 {
+fn renderErrorLine(allocator: std.mem.Allocator, line_start: usize, failure_start: usize, failure_end: usize) ![]u8 {
     var line = std.ArrayList(u8).init(allocator);
     try line.appendSlice("        ");
 
     var i = line_start;
-    while (i < failure_pos) : (i += 1) {
+    while (i < failure_start) : (i += 1) {
         try line.append(' ');
+    }
+
+    while (i < failure_end) : (i += 1) {
+        try line.append('~');
     }
 
     try line.append('^');
@@ -637,12 +641,13 @@ pub const Failure = struct {
 
     allocator: std.mem.Allocator,
     input: []const u21,
-    pos: usize,
+    start: usize,
+    end: usize,
 
     pub fn print(self: *const Self) !void {
-        const line_start = findLineStart(self.input, self.pos);
-        const line_end = findLineEnd(self.input, self.pos);
-        const line_number = findLineNumber(self.input, self.pos);
+        const line_start = findLineStart(self.input, self.start);
+        const line_end = findLineEnd(self.input, self.end);
+        const line_number = findLineNumber(self.input, self.start);
 
         std.debug.print("unexpected input:\n", .{});
         std.debug.print(" {d: >4} | ", .{line_number});
@@ -654,7 +659,7 @@ pub const Failure = struct {
             std.debug.print("{s}", .{buffer});
         }
 
-        const error_line = try renderErrorLine(self.allocator, line_start, self.pos);
+        const error_line = try renderErrorLine(self.allocator, line_start, self.start, self.end);
         defer self.allocator.free(error_line);
 
         std.debug.print("\n{s}\n", .{error_line});
@@ -880,7 +885,8 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
                 opts.fill_failure(.{
                     .allocator = self.allocator,
                     .input = input,
-                    .pos = start,
+                    .start = start,
+                    .end = i,
                 });
                 return error.invalidInput;
             }
