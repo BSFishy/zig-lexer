@@ -1,6 +1,6 @@
 # zig lexer
 
-> [!WARN]
+> [!CAUTION]
 > I don't recommend that you use this project. I have built it for myself, and
 > as such there are certainly holes in the implementation that I am aware about
 > but will be very difficult to reason about in the spaghetti that I have built.
