@@ -773,7 +773,7 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
             try std.fmt.format(writer, "}}\n", .{});
         }
 
-        pub fn lex(self: *Self, input: []const u21, opts: LexerOptions) ![]Token {
+        pub fn lex(self: *const Self, input: []const u21, opts: LexerOptions) ![]Token {
             var out = std.ArrayList(Token).init(self.allocator);
             defer out.deinit();
 

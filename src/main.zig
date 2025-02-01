@@ -44,7 +44,7 @@ pub fn main() !void {
         }
     }
 
-    var l = Lexer.init(allocator);
+    const l = Lexer.init(allocator);
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
@@ -73,9 +73,7 @@ pub fn main() !void {
     defer allocator.free(contents);
 
     var diag: lexer.Diagnostics = .{};
-    const tokens = l.lex(contents, .{
-        .diagnostics = &diag,
-    }) catch {
+    const tokens = l.lex(contents, .{ .diagnostics = &diag }) catch {
         const failure = diag.failure orelse unreachable;
         try failure.print();
         std.process.exit(1);
