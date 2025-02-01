@@ -697,7 +697,7 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
             };
         }
 
-        pub fn to_graph(self: *const Self, writer: anytype) !void {
+        pub fn to_graphviz(self: *const Self, writer: anytype) !void {
             try std.fmt.format(writer, "digraph {{\n", .{});
 
             for (0..static_jump_table.len) |i| {
@@ -771,6 +771,44 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
             }
 
             try std.fmt.format(writer, "}}\n", .{});
+        }
+
+        pub fn to_mermaid(self: *const Self, writer: anytype) !void {
+            try std.fmt.format(writer, "flowchart\n", .{});
+
+            for (0..static_jump_table.len) |i| {
+                const start = try std.fmt.allocPrint(self.allocator, "{}", .{i});
+                defer self.allocator.free(start);
+
+                const static_table = static_jump_table.table[i];
+                for (0..static_table.table.len) |idx| {
+                    const key_codepoint = static_table.table.keys[idx];
+                    const value = static_table.table.values[idx];
+
+                    try printMermaid(TokenType, self.allocator, writer, start, key_codepoint, false, value);
+                }
+
+                for (0..static_table.sequences.len) |idx| {
+                    const key_codepoint = static_table.sequences.keys[idx];
+                    const value = static_table.sequences.values[idx];
+
+                    try printMermaid(TokenType, self.allocator, writer, start, key_codepoint, true, value);
+                }
+
+                if (static_table.fallthrough) |fallthrough| {
+                    const value = fallthrough.next;
+                    const key_codepoint = switch (fallthrough.value) {
+                        .char => |char| char,
+                        .sequence => |char| char,
+                    };
+                    const escaped = switch (fallthrough.value) {
+                        .char => false,
+                        .sequence => true,
+                    };
+
+                    try printMermaid(TokenType, self.allocator, writer, start, key_codepoint, escaped, value);
+                }
+            }
         }
 
         pub fn lex(self: *const Self, input: []const u21, opts: LexerOptions) ![]Token {
@@ -916,7 +954,7 @@ fn uft8ToString(allocator: std.mem.Allocator, codepoint: u21, escaped: bool) ![]
     const registered = try replace(allocator, newline, "\r", "\\\\r");
     defer allocator.free(registered);
 
-    const string = try replace(allocator, registered, "\"", "\\\"");
+    const string = try replace(allocator, registered, "\"", ":#quot;");
     if (!escaped) {
         return string;
     }
@@ -945,4 +983,21 @@ pub fn replace(allocator: std.mem.Allocator, input: []const u8, target: []const 
     }
 
     return result.toOwnedSlice();
+}
+
+fn printMermaid(token_type: type, allocator: std.mem.Allocator, writer: anytype, start: []const u8, key_codepoint: u21, escaped: bool, value: Node(token_type)) !void {
+    const buffer = try uft8ToString(allocator, key_codepoint, escaped);
+    defer allocator.free(buffer);
+
+    if (value.next) |next| {
+        try std.fmt.format(writer, "    {s} -->|\"{s}\"| {}\n", .{ start, buffer, next });
+    }
+
+    if (value.leaf) |leaf| {
+        if (value.next) |next| {
+            try std.fmt.format(writer, "    {} -->|\"super {s} leaf\"| {s}\n", .{ next, buffer, @tagName(leaf) });
+        } else {
+            try std.fmt.format(writer, "    {s} -->|\"{s} leaf\"| {s}\n", .{ start, buffer, @tagName(leaf) });
+        }
+    }
 }

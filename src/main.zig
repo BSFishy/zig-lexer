@@ -51,7 +51,7 @@ pub fn main() !void {
 
     if (includes(args, "tree")) {
         const writer = std.io.getStdOut().writer();
-        try l.to_graph(writer);
+        try l.to_mermaid(writer);
 
         return;
     }
