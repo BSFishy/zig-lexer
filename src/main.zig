@@ -82,6 +82,20 @@ pub fn main() !void {
     };
     defer allocator.free(tokens);
 
+    if (tokens[0].match(&.{ .Comment, .String })) |token| {
+        std.debug.print("token type is: {s} - ", .{@tagName(token.token_type)});
+
+        for (token.source) |char| {
+            var buffer: [4]u8 = undefined;
+            _ = try std.unicode.utf8Encode(char, &buffer);
+            std.debug.print("{s}", .{buffer});
+        }
+
+        std.debug.print("\n", .{});
+    } else {
+        std.debug.print("token is not a comment or string\n", .{});
+    }
+
     for (tokens) |token| {
         printColorForToken(token.token_type);
 

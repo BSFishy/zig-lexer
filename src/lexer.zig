@@ -554,7 +554,7 @@ fn compile_token_type(comptime token_patterns: []const TokenPattern) type {
         token_type: tag,
         source: []const u21,
 
-        pub fn WhittledType(comptime tokens: []const tag) type {
+        pub fn MatchedType(comptime tokens: []const tag) type {
             var token_types = ArrayList(std.builtin.Type.EnumField).init();
             for (tokens, 0..) |token, i| {
                 token_types.append(.{
@@ -563,7 +563,7 @@ fn compile_token_type(comptime token_patterns: []const TokenPattern) type {
                 });
             }
 
-            return @Type(.{
+            const matched_tag = @Type(.{
                 .Enum = .{
                     .tag_type = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = @ceil(@log2(@as(f32, tokens.len))) } }),
                     .fields = token_types.get(),
@@ -571,12 +571,20 @@ fn compile_token_type(comptime token_patterns: []const TokenPattern) type {
                     .is_exhaustive = true,
                 },
             });
+
+            return struct {
+                token_type: matched_tag,
+                source: []const u21,
+            };
         }
 
-        pub fn whittle(self: *const Self, comptime tokens: []const tag) ?WhittledType(tokens) {
+        pub fn match(self: *const Self, comptime tokens: []const tag) ?MatchedType(tokens) {
             inline for (tokens, 0..) |token, i| {
                 if (token == self.token_type) {
-                    return @enumFromInt(i);
+                    return .{
+                        .token_type = @enumFromInt(i),
+                        .source = self.source,
+                    };
                 }
             }
 
