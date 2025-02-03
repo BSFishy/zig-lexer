@@ -708,13 +708,32 @@ pub const LexerOptions = struct {
     }
 };
 
-pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
+fn tokenPatternsFromTokens(comptime tokens: anytype) [@typeInfo(@TypeOf(tokens)).Struct.fields.len]TokenPattern {
+    const fields = @typeInfo(@TypeOf(tokens)).Struct.fields;
+    var token_patterns: [fields.len]TokenPattern = undefined;
+    for (fields, 0..) |field, i| {
+        var token: TokenPattern = .{ .name = undefined, .pattern = undefined };
+        token.name = field.name;
+
+        const values = @field(tokens, field.name);
+        for (@typeInfo(@TypeOf(values)).Struct.fields) |value_field| {
+            @field(token, value_field.name) = @field(values, value_field.name);
+        }
+
+        token_patterns[i] = token;
+    }
+
+    return token_patterns;
+}
+
+pub fn Lexer(comptime tokens: anytype) type {
     return struct {
         const Self = @This();
 
-        pub const Token = compile_token_type(token_patterns);
+        const token_patterns = tokenPatternsFromTokens(tokens);
+        pub const Token = compile_token_type(&token_patterns);
         pub const TokenType = Token.Tag;
-        const static_jump_table = compile_static_jump_map(token_patterns, TokenType);
+        const static_jump_table = compile_static_jump_map(&token_patterns, TokenType);
 
         allocator: std.mem.Allocator,
 
