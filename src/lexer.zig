@@ -896,6 +896,16 @@ pub fn Lexer(comptime token_patterns: []const TokenPattern) type {
                     .token_type = l,
                     .source = input[start..i],
                 });
+            } else {
+                if (start != input.len) {
+                    opts.fill_failure(.{
+                        .allocator = self.allocator,
+                        .input = input,
+                        .start = start,
+                        .end = i - 1,
+                    });
+                    return error.invalidInput;
+                }
             }
 
             return out.toOwnedSlice();
