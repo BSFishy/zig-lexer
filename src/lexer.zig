@@ -488,8 +488,17 @@ fn match_sequence(sequence: u21, key: u21) bool {
 
 fn Leaf(token_type: type) type {
     return union(enum) {
+        const Self = @This();
+
         leaf: token_type,
         skip,
+
+        fn name(self: Self) []const u8 {
+            switch (self) {
+                .leaf => |leaf| return @tagName(leaf),
+                .skip => return "skip",
+            }
+        }
     };
 }
 
@@ -781,9 +790,9 @@ pub fn Lexer(comptime tokens: anytype) type {
 
                     if (value.leaf) |leaf| {
                         if (value.next) |next| {
-                            try std.fmt.format(writer, "  {} -> {s} [label=\"super {s} leaf\" color=blue];\n", .{ next, @tagName(leaf), buffer });
+                            try std.fmt.format(writer, "  {} -> {s} [label=\"super {s} leaf\" color=blue];\n", .{ next, leaf.name(), buffer });
                         } else {
-                            try std.fmt.format(writer, "  {s} -> {s} [label=\"{s} leaf\" color=blue];\n", .{ start, @tagName(leaf), buffer });
+                            try std.fmt.format(writer, "  {s} -> {s} [label=\"{s} leaf\" color=blue];\n", .{ start, leaf.name(), buffer });
                         }
                     }
                 }
@@ -801,9 +810,9 @@ pub fn Lexer(comptime tokens: anytype) type {
 
                     if (value.leaf) |leaf| {
                         if (value.next) |next| {
-                            try std.fmt.format(writer, "  {} -> {s} [label=\"super {s} leaf\" color=green];\n", .{ next, @tagName(leaf), buffer });
+                            try std.fmt.format(writer, "  {} -> {s} [label=\"super {s} leaf\" color=green];\n", .{ next, leaf.name(), buffer });
                         } else {
-                            try std.fmt.format(writer, "  {s} -> {s} [label=\"{s} leaf\" color=green];\n", .{ start, @tagName(leaf), buffer });
+                            try std.fmt.format(writer, "  {s} -> {s} [label=\"{s} leaf\" color=green];\n", .{ start, leaf.name(), buffer });
                         }
                     }
                 }
@@ -825,9 +834,9 @@ pub fn Lexer(comptime tokens: anytype) type {
 
                     if (value.leaf) |leaf| {
                         if (value.next) |next| {
-                            try std.fmt.format(writer, "  {} -> {s} [label=\"super {s} leaf\" color=purple];\n", .{ next, @tagName(leaf), buffer });
+                            try std.fmt.format(writer, "  {} -> {s} [label=\"super {s} leaf\" color=purple];\n", .{ next, leaf.name(), buffer });
                         } else {
-                            try std.fmt.format(writer, "  {s} -> {s} [label=\"{s} leaf\" color=purple];\n", .{ start, @tagName(leaf), buffer });
+                            try std.fmt.format(writer, "  {s} -> {s} [label=\"{s} leaf\" color=purple];\n", .{ start, leaf.name(), buffer });
                         }
                     }
                 }
