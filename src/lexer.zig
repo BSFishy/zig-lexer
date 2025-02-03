@@ -614,12 +614,12 @@ fn findLineStart(input: []const u21, start: usize) usize {
 
 fn findLineEnd(input: []const u21, start: usize) usize {
     var i = start;
-    while (i < input.len - 1 and input[i + 1] != '\r' and input[i + 1] != '\n') : (i += 1) {}
+    while (i < input.len - 1 and input[i] != '\r' and input[i] != '\n') : (i += 1) {}
 
-    return i + 1;
+    return i;
 }
 
-fn renderErrorLine(allocator: std.mem.Allocator, line_start: usize, failure_start: usize, failure_end: usize) ![]u8 {
+fn renderErrorLine(allocator: std.mem.Allocator, line_start: usize, line_end: usize, failure_start: usize, failure_end: usize) ![]u8 {
     var line = std.ArrayList(u8).init(allocator);
     try line.appendSlice("        ");
 
@@ -628,11 +628,14 @@ fn renderErrorLine(allocator: std.mem.Allocator, line_start: usize, failure_star
         try line.append(' ');
     }
 
-    while (i < failure_end) : (i += 1) {
+    while (i < failure_end and i < line_end) : (i += 1) {
         try line.append('~');
     }
 
-    try line.append('^');
+    if (i == failure_end) {
+        try line.append('^');
+    }
+
     return line.toOwnedSlice();
 }
 
@@ -647,19 +650,43 @@ pub const Failure = struct {
     pub fn print(self: *const Self) !void {
         const line_start = findLineStart(self.input, self.start);
         const line_end = findLineEnd(self.input, self.end);
-        const line_number = findLineNumber(self.input, self.start);
-
-        std.debug.print("unexpected input:\n", .{});
-        std.debug.print(" {d: >4} | ", .{line_number});
 
         const input = self.input[line_start..line_end];
-        for (input) |char| {
+        var line_number = findLineNumber(self.input, self.start);
+
+        std.debug.print("unexpected input:\n", .{});
+
+        // doing this because im lazy and cant think of another way to do this
+        var started = false;
+        for (input, line_start..) |char, i| {
+            if (char == '\n' or !started) {
+                if (started) {
+                    const current_line_start = findLineStart(self.input, i);
+                    const current_line_end = findLineEnd(self.input, i);
+                    const error_line = try renderErrorLine(self.allocator, current_line_start, current_line_end, self.start, self.end);
+                    defer self.allocator.free(error_line);
+
+                    std.debug.print("\n{s}\n", .{error_line});
+                }
+
+                std.debug.print(" {d: >4} | ", .{line_number});
+                line_number += 1;
+
+                if (!started) {
+                    started = true;
+                } else {
+                    continue;
+                }
+            }
+
             var buffer: [4]u8 = undefined;
             _ = try std.unicode.utf8Encode(char, &buffer);
             std.debug.print("{s}", .{buffer});
         }
 
-        const error_line = try renderErrorLine(self.allocator, line_start, self.start, self.end);
+        const current_line_start = findLineStart(self.input, self.end);
+        const current_line_end = findLineEnd(self.input, self.end);
+        const error_line = try renderErrorLine(self.allocator, current_line_start, current_line_end, self.start, self.end);
         defer self.allocator.free(error_line);
 
         std.debug.print("\n{s}\n", .{error_line});
