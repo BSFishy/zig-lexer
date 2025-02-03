@@ -9,6 +9,7 @@ const StaticMap = map.StaticMap;
 pub const TokenPattern = struct {
     name: []const u8,
     pattern: []const u8,
+    skip: bool = false,
 };
 
 fn Node(token_type: type) type {
@@ -485,7 +486,14 @@ fn match_sequence(sequence: u21, key: u21) bool {
     }
 }
 
-fn compile_static_jump_map(comptime token_patterns: []const TokenPattern, comptime TokenType: type) StaticJumpTable(TokenType) {
+fn Leaf(token_type: type) type {
+    return union(enum) {
+        leaf: token_type,
+        skip,
+    };
+}
+
+fn compile_static_jump_map(comptime token_patterns: []const TokenPattern, comptime TokenType: type) StaticJumpTable(Leaf(TokenType)) {
     if (!@inComptime()) {
         @compileError("This function must be executed at compile time.");
     }
@@ -494,19 +502,19 @@ fn compile_static_jump_map(comptime token_patterns: []const TokenPattern, compti
 
     @setEvalBranchQuota(token_patterns.len * 10000);
 
-    var jump_table = JumpTable(TokenType).init();
-    for (token_patterns, 0..) |token_pattern, i| {
+    var jump_table = JumpTable(Leaf(TokenType)).init();
+    for (token_patterns) |token_pattern| {
         const tokens = regex.parsePattern(token_pattern.pattern) catch |err| @compileError(err);
-        const nodes = insert_tokens(TokenType, 0, false, &jump_table, tokens, &.{}, null);
+        const nodes = insert_tokens(Leaf(TokenType), 0, false, &jump_table, tokens, &.{}, null);
         for (nodes) |node| {
-            node.leaf = std.meta.intToEnum(TokenType, i) catch unreachable;
+            node.leaf = if (token_pattern.skip) .skip else .{ .leaf = @field(TokenType, token_pattern.name) };
         }
     }
 
-    expand_jump_table_fallthrough(TokenType, &jump_table, 0, null);
-    expand_jump_table_sequences(TokenType, &jump_table, 0);
+    expand_jump_table_fallthrough(Leaf(TokenType), &jump_table, 0, null);
+    expand_jump_table_sequences(Leaf(TokenType), &jump_table, 0);
 
-    var static_table = ArrayList(StaticTable(TokenType)).init();
+    var static_table = ArrayList(StaticTable(Leaf(TokenType))).init();
     for (jump_table.get()) |table| {
         static_table.append(.{
             .table = table.table.compile(),
@@ -526,16 +534,25 @@ fn compile_static_jump_map(comptime token_patterns: []const TokenPattern, compti
 
 fn compile_token_type(comptime token_patterns: []const TokenPattern) type {
     var enum_fields = ArrayList(std.builtin.Type.EnumField).init();
-    for (token_patterns, 0..) |pattern, i| {
-        var name: [pattern.name.len:0]u8 = undefined;
-        for (pattern.name, 0..) |char, idx| {
-            name[idx] = char;
-        }
+    {
+        var i: usize = 0;
+        for (token_patterns) |pattern| {
+            if (pattern.skip) {
+                continue;
+            }
 
-        enum_fields.append(.{
-            .name = &name,
-            .value = i,
-        });
+            var name: [pattern.name.len:0]u8 = undefined;
+            for (pattern.name, 0..) |char, idx| {
+                name[idx] = char;
+            }
+
+            enum_fields.append(.{
+                .name = &name,
+                .value = i,
+            });
+
+            i += 1;
+        }
     }
 
     const tag = @Type(.{
@@ -827,7 +844,7 @@ pub fn Lexer(comptime tokens: anytype) type {
 
             var i: usize = 0;
             var table_idx: usize = 0;
-            var leaf: ?TokenType = null;
+            var leaf: ?Leaf(TokenType) = null;
             var start: usize = 0;
             outer: while (i < input.len) : (i += 1) {
                 const table = static_jump_table.table[table_idx];
@@ -845,10 +862,15 @@ pub fn Lexer(comptime tokens: anytype) type {
                         leaf = char_node.leaf;
                     } else {
                         if (char_node.leaf) |char_leaf| {
-                            try out.append(.{
-                                .token_type = char_leaf,
-                                .source = input[start .. i + 1],
-                            });
+                            switch (char_leaf) {
+                                .leaf => |token_leaf| {
+                                    try out.append(.{
+                                        .token_type = token_leaf,
+                                        .source = input[start .. i + 1],
+                                    });
+                                },
+                                else => {},
+                            }
 
                             table_idx = 0;
                             leaf = null;
@@ -873,10 +895,15 @@ pub fn Lexer(comptime tokens: anytype) type {
                         leaf = seq_node.leaf;
                     } else {
                         if (seq_node.leaf) |seq_leaf| {
-                            try out.append(.{
-                                .token_type = seq_leaf,
-                                .source = input[start .. i + 1],
-                            });
+                            switch (seq_leaf) {
+                                .leaf => |token_leaf| {
+                                    try out.append(.{
+                                        .token_type = token_leaf,
+                                        .source = input[start .. i + 1],
+                                    });
+                                },
+                                else => {},
+                            }
 
                             table_idx = 0;
                             leaf = null;
@@ -897,10 +924,15 @@ pub fn Lexer(comptime tokens: anytype) type {
                             leaf = fallthrough_node.leaf;
                         } else {
                             if (fallthrough_node.leaf) |fallthrough_leaf| {
-                                try out.append(.{
-                                    .token_type = fallthrough_leaf,
-                                    .source = input[start .. i + 1],
-                                });
+                                switch (fallthrough_leaf) {
+                                    .leaf => |token_leaf| {
+                                        try out.append(.{
+                                            .token_type = token_leaf,
+                                            .source = input[start .. i + 1],
+                                        });
+                                    },
+                                    else => {},
+                                }
 
                                 table_idx = 0;
                                 leaf = null;
@@ -915,10 +947,15 @@ pub fn Lexer(comptime tokens: anytype) type {
                 }
 
                 if (leaf) |l| {
-                    try out.append(.{
-                        .token_type = l,
-                        .source = input[start..i],
-                    });
+                    switch (l) {
+                        .leaf => |token_leaf| {
+                            try out.append(.{
+                                .token_type = token_leaf,
+                                .source = input[start..i],
+                            });
+                        },
+                        else => {},
+                    }
 
                     table_idx = 0;
                     leaf = null;
@@ -938,10 +975,15 @@ pub fn Lexer(comptime tokens: anytype) type {
             }
 
             if (leaf) |l| {
-                try out.append(.{
-                    .token_type = l,
-                    .source = input[start..i],
-                });
+                switch (l) {
+                    .leaf => |token_leaf| {
+                        try out.append(.{
+                            .token_type = token_leaf,
+                            .source = input[start..i],
+                        });
+                    },
+                    else => {},
+                }
             } else {
                 if (start != input.len) {
                     opts.fill_failure(.{
