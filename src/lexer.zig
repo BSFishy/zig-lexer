@@ -159,7 +159,18 @@ fn Child(token_type: type) type {
     };
 }
 
-fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *JumpTable(token_type), tokens: []const regex.Token, parents: []const *Node(token_type), next: ?usize) []const *Node(token_type) {
+const Branch = union(enum) {
+    char: u21,
+    sequence: u21,
+    fallthrough,
+};
+
+const Index = struct {
+    table: usize,
+    branch: Branch,
+};
+
+fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *JumpTable(token_type), tokens: []const regex.Token, parents: []const Index, next: ?usize) []const Index {
     const children = tokens[1..];
     var table = if (jump_table.len > 0) jump_table.at(index) else blk: {
         jump_table.append(Table(token_type).init());
@@ -188,7 +199,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                         },
                     });
 
-                    return &.{&(table.fallthrough orelse unreachable).next};
+                    return &.{.{ .table = index, .branch = .fallthrough }};
                 }
 
                 @compileError("unimplemented");
@@ -197,33 +208,33 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
             if (table.table.get_mut(c)) |v| {
                 if (children.len == 0) {
                     if (next == null or v.next == next) {
-                        return &.{table.table.at(c)};
+                        return &.{.{ .table = index, .branch = .{ .char = c } }};
                     }
 
                     @compileError("unimplemented");
                 }
 
                 if (v.next) |next_table| {
-                    return insert_tokens(token_type, next_table, invert, jump_table, children, &.{table.table.at(c)}, next);
+                    return insert_tokens(token_type, next_table, invert, jump_table, children, &.{.{ .table = index, .branch = .{ .char = c } }}, next);
                 }
 
                 const idx = jump_table.len;
+                v.next = idx;
                 jump_table.append(Table(token_type).init());
 
-                v.next = idx;
-                return insert_tokens(token_type, idx, invert, jump_table, children, &.{table.table.at(c)}, next);
+                return insert_tokens(token_type, idx, invert, jump_table, children, &.{.{ .table = index, .branch = .{ .char = c } }}, next);
             }
 
             if (children.len == 0) {
                 table.put(c, .{ .next = next });
-                return &.{table.table.at(c)};
+                return &.{.{ .table = index, .branch = .{ .char = c } }};
             }
 
             const idx = jump_table.len;
             table.put(c, .{ .next = idx });
             jump_table.append(Table(token_type).init());
 
-            return insert_tokens(token_type, idx, invert, jump_table, children, &.{table.table.at(c)}, next);
+            return insert_tokens(token_type, idx, invert, jump_table, children, &.{.{ .table = index, .branch = .{ .char = c } }}, next);
         },
         .Sequence => |c| {
             if (invert) {
@@ -233,7 +244,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
             if (table.sequences.get(c)) |v| {
                 if (children.len == 0) {
                     if (v.next == next) {
-                        return &.{table.sequences.at(c)};
+                        return &.{.{ .table = index, .branch = .{ .sequence = c } }};
                     }
 
                     @compileError("unimplemented");
@@ -244,17 +255,17 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
 
             if (children.len == 0) {
                 table.sequences.put(c, .{ .next = next });
-                return &.{table.sequences.at(c)};
+                return &.{.{ .table = index, .branch = .{ .sequence = c } }};
             }
 
             const idx = jump_table.len;
             table.sequences.put(c, .{ .next = idx });
             jump_table.append(Table(token_type).init());
 
-            return insert_tokens(token_type, idx, invert, jump_table, children, &.{table.sequences.at(c)}, next);
+            return insert_tokens(token_type, idx, invert, jump_table, children, &.{.{ .table = index, .branch = .{ .sequence = c } }}, next);
         },
         .Group => |group| {
-            var new_parents = ArrayList(*Node(token_type)).init();
+            var new_parents = ArrayList(Index).init();
             for (group.chars) |char| {
                 var sub_tokens = [_]regex.Token{.{ .Char = char }};
                 new_parents.insert(insert_tokens(token_type, index, group.invert, jump_table, &sub_tokens, parents, next));
@@ -263,7 +274,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
             return new_parents.get();
         },
         .Capture => |capture| {
-            var new_parents = ArrayList(*Node(token_type)).init();
+            var new_parents = ArrayList(Index).init();
             for (capture.options) |option| {
                 new_parents.insert(insert_tokens(token_type, index, invert, jump_table, option, parents, next));
             }
@@ -279,14 +290,14 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                         sub_tokens[i] = c;
                     }
 
-                    var new_parents = ArrayList(*Node(token_type)).init();
+                    var new_parents = ArrayList(Index).init();
                     new_parents.insert(insert_tokens(token_type, index, invert, jump_table, &sub_tokens, parents, next));
                     new_parents.insert(parents);
 
                     return new_parents.get();
                 },
                 .ZeroOrMore => {
-                    var new_parents = ArrayList(*Node(token_type)).init();
+                    var new_parents = ArrayList(Index).init();
                     new_parents.insert(insert_tokens(token_type, index, invert, jump_table, &.{quant.inner.*}, parents, index));
                     new_parents.insert(parents);
 
@@ -302,7 +313,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
 
                     var sub_tokens = [_]regex.Token{quant.inner.*};
 
-                    var new_parents = ArrayList(*Node(token_type)).init();
+                    var new_parents = ArrayList(Index).init();
                     new_parents.insert(insert_tokens(token_type, index, invert, jump_table, &sub_tokens, parents, idx));
                     new_parents.insert(insert_tokens(token_type, idx, invert, jump_table, &sub_tokens, parents, idx));
 
@@ -513,8 +524,15 @@ fn compile_static_jump_map(comptime token_patterns: []const TokenPattern, compti
     var jump_table = JumpTable(Leaf(TokenType)).init();
     for (token_patterns) |token_pattern| {
         const tokens = regex.parsePattern(token_pattern.pattern) catch |err| @compileError(err);
-        const nodes = insert_tokens(Leaf(TokenType), 0, false, &jump_table, tokens, &.{}, null);
-        for (nodes) |node| {
+        const indices = insert_tokens(Leaf(TokenType), 0, false, &jump_table, tokens, &.{}, null);
+        for (indices) |index| {
+            const table = jump_table.at(index.table);
+            var node = switch (index.branch) {
+                .char => |char| table.table.at(char),
+                .sequence => |seq| table.sequences.at(seq),
+                .fallthrough => &(table.fallthrough orelse @panic("unimplemented")).next,
+            };
+
             node.leaf = if (token_pattern.skip) .skip else .{ .leaf = @field(TokenType, token_pattern.name) };
         }
     }
