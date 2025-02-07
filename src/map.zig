@@ -48,6 +48,10 @@ pub fn Map(K: type, V: type) type {
                 }
             }
 
+            if (K == u21) {
+                // @compileLog("putting", std.unicode.utf8EncodeComptime(key), value);
+            }
+
             self.keys.append(key);
             self.values.append(value);
         }
@@ -63,14 +67,13 @@ pub fn Map(K: type, V: type) type {
         }
 
         pub fn len(self: *const Self) usize {
-            return self.keys.len();
+            return self.keys.len;
         }
 
         pub fn get(self: *const Self, key: K) ?V {
-            const values = self.values.get();
-            for (self.keys.get(), 0..) |k, i| {
+            for (self.keys.get(), self.values.get()) |k, value| {
                 if (key == k) {
-                    return values[i];
+                    return value;
                 }
             }
 
@@ -102,15 +105,15 @@ pub fn Map(K: type, V: type) type {
         }
 
         pub fn compile(self: *const Self) StaticMap(K, V) {
-            const length = self.keys.len();
+            const length = self.keys.len;
 
             var keys: [length]K = undefined;
             var values: [length]V = undefined;
+            @memcpy(&keys, self.keys.contents[0..length]);
+            @memcpy(&values, self.values.contents[0..length]);
 
-            for (self.keys.get(), self.values.get(), 0..) |key, value, i| {
-                keys[i] = key;
-                values[i] = value;
-            }
+            // @compileLog(self.keys.contents, keys);
+            // @compileLog(self.values.contents, values);
 
             const const_keys = keys;
             const const_values = values;
