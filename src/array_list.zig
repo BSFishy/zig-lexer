@@ -20,6 +20,16 @@ pub fn ArrayList(Item: type) type {
             };
         }
 
+        pub fn import(other: []const Item) Self {
+            var data: [other.len]Item = undefined;
+            @memcpy(data[0..], other);
+
+            return .{
+                .contents = &data,
+                .len = other.len,
+            };
+        }
+
         pub fn is_empty(self: *Self) bool {
             return self.len == 0;
         }

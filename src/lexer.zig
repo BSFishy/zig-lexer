@@ -118,8 +118,6 @@ fn Table(token_type: type) type {
                     } else {
                         @compileError("unimplemented");
                     }
-                } else {
-                    @compileError("unimplemented");
                 }
             }
         }
@@ -166,8 +164,19 @@ const Branch = union(enum) {
 };
 
 const Index = struct {
+    const Self = @This();
+
     table: usize,
     branch: Branch,
+
+    fn node(self: *const Self, TokenType: type, jump_table: *JumpTable(TokenType)) *Node(TokenType) {
+        const table = jump_table.at(self.table);
+        return switch (self.branch) {
+            .char => |char| table.table.at(char),
+            .sequence => |seq| table.sequences.at(seq),
+            .fallthrough => &(table.fallthrough orelse @panic("unimplemented")).next,
+        };
+    }
 };
 
 fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *JumpTable(token_type), tokens: []const regex.Token, parents: []const Index, next: ?usize) []const Index {
@@ -184,7 +193,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                 const value: FallthroughChar = .{ .char = c };
 
                 if (table.fallthrough) |fallthrough| {
-                    if (fallthrough.value.compare(value) and fallthrough.next.next == next) {
+                    if (fallthrough.value.compare(value)) {
                         @compileError("unimplemented");
                     } else {
                         @compileError("cannot have multiple fallthroughs here");
@@ -194,9 +203,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                 if (children.len == 0) {
                     table.setFallthrough(.{
                         .value = value,
-                        .next = .{
-                            .next = next,
-                        },
+                        .next = .{},
                     });
 
                     return &.{.{ .table = index, .branch = .fallthrough }};
@@ -207,11 +214,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
 
             if (table.table.get_mut(c)) |v| {
                 if (children.len == 0) {
-                    if (next == null or v.next == next) {
-                        return &.{.{ .table = index, .branch = .{ .char = c } }};
-                    }
-
-                    @compileError("unimplemented");
+                    return &.{.{ .table = index, .branch = .{ .char = c } }};
                 }
 
                 if (v.next) |next_table| {
@@ -222,11 +225,11 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                 v.next = idx;
                 jump_table.append(Table(token_type).init());
 
-                return insert_tokens(token_type, idx, invert, jump_table, children, &.{.{ .table = index, .branch = .{ .char = c } }}, next);
+                return insert_tokens(token_type, idx, invert, jump_table, children, &.{.{ .table = index, .branch = .{ .char = c } }});
             }
 
             if (children.len == 0) {
-                table.put(c, .{ .next = next });
+                table.put(c, .{});
                 return &.{.{ .table = index, .branch = .{ .char = c } }};
             }
 
@@ -243,18 +246,15 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
 
             if (table.sequences.get(c)) |v| {
                 if (children.len == 0) {
-                    if (v.next == next) {
-                        return &.{.{ .table = index, .branch = .{ .sequence = c } }};
-                    }
-
-                    @compileError("unimplemented");
+                    return &.{.{ .table = index, .branch = .{ .sequence = c } }};
                 }
 
+                _ = v;
                 @compileError("unimplemented");
             }
 
             if (children.len == 0) {
-                table.sequences.put(c, .{ .next = next });
+                table.sequences.put(c, .{});
                 return &.{.{ .table = index, .branch = .{ .sequence = c } }};
             }
 
@@ -262,13 +262,28 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
             table.sequences.put(c, .{ .next = idx });
             jump_table.append(Table(token_type).init());
 
-            return insert_tokens(token_type, idx, invert, jump_table, children, &.{.{ .table = index, .branch = .{ .sequence = c } }}, next);
+            return insert_tokens(token_type, idx, invert, jump_table, children, &.{.{ .table = index, .branch = .{ .sequence = c } }});
         },
         .Group => |group| {
             var new_parents = ArrayList(Index).init();
             for (group.chars) |char| {
                 var sub_tokens = [_]regex.Token{.{ .Char = char }};
                 new_parents.insert(insert_tokens(token_type, index, group.invert, jump_table, &sub_tokens, parents, next));
+            }
+
+            // if this isn't the last node of the pattern
+            if (children.len > 0) {
+                const idx = jump_table.len;
+                jump_table.append(Table(token_type).init());
+
+                for (new_parents.get()) |parent| {
+                    var node = parent.node(token_type, jump_table);
+                    if (node.next == null) {
+                        node.next = idx;
+                    }
+                }
+
+                new_parents = ArrayList(Index).import(insert_tokens(token_type, idx, invert, jump_table, children, new_parents.get()));
             }
 
             return new_parents.get();
@@ -279,33 +294,142 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                 new_parents.insert(insert_tokens(token_type, index, invert, jump_table, option, parents, next));
             }
 
+            // if this isn't the last node of the pattern
+            if (children.len > 0) {}
+
             return new_parents.get();
         },
         .Quantified => |quant| {
             switch (quant.quantifier) {
                 .ZeroOrOne => {
-                    var sub_tokens: [children.len + 1]regex.Token = undefined;
-                    sub_tokens[0] = quant.inner.*;
-                    for (children, 1..) |c, i| {
-                        sub_tokens[i] = c;
-                    }
-
                     var new_parents = ArrayList(Index).init();
-                    new_parents.insert(insert_tokens(token_type, index, invert, jump_table, &sub_tokens, parents, next));
-                    new_parents.insert(parents);
+
+                    if (children.len > 0) {
+                        _ = insert_tokens(token_type, index, invert, jump_table, &.{quant.inner.*}, parents);
+                        new_parents.insert(insert_tokens(token_type, index, invert, jump_table, children, parents));
+                    } else {
+                        new_parents.insert(parents);
+                        new_parents.insert(insert_tokens(token_type, index, invert, jump_table, &.{quant.inner.*}, parents));
+                    }
 
                     return new_parents.get();
                 },
                 .ZeroOrMore => {
-                    var new_parents = ArrayList(Index).init();
-                    new_parents.insert(insert_tokens(token_type, index, invert, jump_table, &.{quant.inner.*}, parents, index));
-                    new_parents.insert(parents);
+                    // gonna comment out this process ahead of everything else
+                    // because it is an absolute doozy. effectively, what we
+                    // want to do is add the quantifier pattern first. this is
+                    // important because the pattern might already exist. if it
+                    // does, we want to add children off the existing tables,
+                    // otherwise generate new tables. the biggest piece of this
+                    // is that the quantifier may have multiple branches off the
+                    // end of it, so we need to make sure we handle each and
+                    // every one of those branches.
+                    //
+                    // once we've added the quantifier, we need to iterate
+                    // through and figure out which ones need the quantifier
+                    // added again, and which ones need a new table created so
+                    // that the quantifier can be added again. additionally,
+                    // this gives us every table that we need to add children
+                    // too as well.
 
-                    if (children.len > 0) {
-                        return insert_tokens(token_type, index, invert, jump_table, children, parents, next);
+                    // so first up is adding the first quantifier and splitting
+                    // up which indicies have a next table and which dont
+                    var with_next = ArrayList(Index).init();
+                    var without_next = ArrayList(Index).init();
+                    const direct_next_parents = insert_tokens(token_type, index, invert, jump_table, &.{quant.inner.*}, parents, next);
+                    for (direct_next_parents) |parent| {
+                        const node = parent.node(token_type, jump_table);
+                        if (node.next == null) {
+                            without_next.append(parent);
+                        } else {
+                            with_next.append(parent);
+                        }
                     }
 
-                    return new_parents.get();
+                    // start setting up the list of indicies we will return out
+                    // of this function call
+                    var children_parents = ArrayList(Index).init();
+                    if (children.len == 0) {
+                        // if (next == null) {
+                        // only add parents if there are no more patterns after
+                        // this quantifier. if there are other patterns, those
+                        // should be the ones that get the leaves, not the
+                        // parents.
+                        children_parents.insert(parents);
+                        // }
+
+                        // add direct next parents, since that will be a place
+                        // where the pattern can terminate.
+                        children_parents.insert(direct_next_parents);
+                    } else {
+                        // insert the children at the current index and add them
+                        // to the list of indicies to return.
+                        children_parents.insert(insert_tokens(token_type, index, invert, jump_table, children, parents, next));
+                    }
+
+                    // only iterate through the list of indicies that dont have
+                    // a next table so that we only create a new table if we need
+                    // to
+                    if (without_next.len > 0) {
+                        //
+                        const idx = next orelse blk: {
+                            const idx = jump_table.len;
+                            jump_table.append(Table(token_type).init());
+                            break :blk idx;
+                        };
+
+                        for (without_next.get()) |parent| {
+                            var node = parent.node(token_type, jump_table);
+                            node.next = idx;
+                        }
+
+                        const cycle_parents = insert_tokens(token_type, idx, invert, jump_table, &.{quant.inner.*}, direct_next_parents, idx);
+                        for (cycle_parents) |parent| {
+                            var node = parent.node(token_type, jump_table);
+                            if (node.next) |next_node| {
+                                if (next_node != idx) {
+                                    @compileError("need to debug :3");
+                                }
+
+                                // its fine, theyre equal
+                            } else {
+                                node.next = idx;
+                            }
+                        }
+
+                        if (children.len > 0) {
+                            children_parents.insert(insert_tokens(token_type, idx, invert, jump_table, children, direct_next_parents));
+                        } else {
+                            children_parents.insert(cycle_parents);
+                        }
+                    }
+
+                    for (with_next.get()) |parent| {
+                        const node = parent.node(token_type, jump_table);
+                        const idx = node.next orelse unreachable;
+
+                        const cycle_parents = insert_tokens(token_type, idx, invert, jump_table, &.{quant.inner.*}, direct_next_parents, idx);
+                        for (cycle_parents) |new_parent| {
+                            var new_node = new_parent.node(token_type, jump_table);
+                            if (new_node.next) |next_node| {
+                                if (next_node != idx) {
+                                    @compileError("need to debug :3");
+                                }
+
+                                // its fine, theyre equal
+                            } else {
+                                new_node.next = idx;
+                            }
+                        }
+
+                        if (children.len > 0) {
+                            children_parents.insert(insert_tokens(token_type, idx, invert, jump_table, children, direct_next_parents, next));
+                        } else {
+                            children_parents.insert(cycle_parents);
+                        }
+                    }
+
+                    return children_parents.get();
                 },
                 .OneOrMore => {
                     const idx = jump_table.len;
@@ -318,7 +442,7 @@ fn insert_tokens(token_type: type, index: usize, invert: bool, jump_table: *Jump
                     new_parents.insert(insert_tokens(token_type, idx, invert, jump_table, &sub_tokens, parents, idx));
 
                     if (children.len != 0) {
-                        new_parents.insert(insert_tokens(token_type, idx, invert, jump_table, children, parents, next));
+                        new_parents.insert(insert_tokens(token_type, idx, invert, jump_table, children, parents));
                     }
 
                     return new_parents.get();
@@ -526,12 +650,10 @@ fn compile_static_jump_map(comptime token_patterns: []const TokenPattern, compti
         const tokens = regex.parsePattern(token_pattern.pattern) catch |err| @compileError(err);
         const indices = insert_tokens(Leaf(TokenType), 0, false, &jump_table, tokens, &.{}, null);
         for (indices) |index| {
-            const table = jump_table.at(index.table);
-            var node = switch (index.branch) {
-                .char => |char| table.table.at(char),
-                .sequence => |seq| table.sequences.at(seq),
-                .fallthrough => &(table.fallthrough orelse @panic("unimplemented")).next,
-            };
+            var node = index.node(Leaf(TokenType), &jump_table);
+            // if (node.leaf != null) {
+            //     @compileError("duplicate token detected");
+            // }
 
             node.leaf = if (token_pattern.skip) .skip else .{ .leaf = @field(TokenType, token_pattern.name) };
         }
