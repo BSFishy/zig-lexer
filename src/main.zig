@@ -62,53 +62,53 @@ pub fn main() !void {
         return;
     }
 
-    // const contents = try blk: {
-    //     const input = try std.fs.cwd().readFileAlloc(allocator, "example.lang", 2 * 1024 * 1024 * 1024);
-    //     defer allocator.free(input);
-    //
-    //     const input_view = try std.unicode.Utf8View.init(input);
-    //
-    //     var contents = std.ArrayList(u21).init(allocator);
-    //     var iterator = input_view.iterator();
-    //     while (iterator.nextCodepoint()) |codepoint| {
-    //         try contents.append(codepoint);
-    //     }
-    //
-    //     break :blk contents.toOwnedSlice();
-    // };
-    // defer allocator.free(contents);
-    //
-    // var diag: lexer.Diagnostics = .{};
-    // const tokens = l.lex(contents, .{ .diagnostics = &diag }) catch {
-    //     const failure = diag.failure orelse unreachable;
-    //     try failure.print();
-    //     std.process.exit(1);
-    // };
-    // defer allocator.free(tokens);
-    //
-    // if (tokens[0].match(&.{ .Comment, .String })) |token| {
-    //     std.debug.print("token type is: {s} - ", .{@tagName(token.token_type)});
-    //
-    //     for (token.source) |char| {
-    //         var buffer: [4]u8 = undefined;
-    //         _ = try std.unicode.utf8Encode(char, &buffer);
-    //         std.debug.print("{s}", .{buffer});
-    //     }
-    //
-    //     std.debug.print("\n", .{});
-    // } else {
-    //     std.debug.print("token is not a comment or string\n", .{});
-    // }
-    //
-    // for (tokens) |token| {
-    //     printColorForToken(token.token_type);
-    //
-    //     for (token.source) |char| {
-    //         var buffer: [4]u8 = undefined;
-    //         _ = try std.unicode.utf8Encode(char, &buffer);
-    //         std.debug.print("{s}", .{buffer});
-    //     }
-    // }
+    const contents = try blk: {
+        const input = try std.fs.cwd().readFileAlloc(allocator, "example.lang", 2 * 1024 * 1024 * 1024);
+        defer allocator.free(input);
+
+        const input_view = try std.unicode.Utf8View.init(input);
+
+        var contents = std.ArrayList(u21).init(allocator);
+        var iterator = input_view.iterator();
+        while (iterator.nextCodepoint()) |codepoint| {
+            try contents.append(codepoint);
+        }
+
+        break :blk contents.toOwnedSlice();
+    };
+    defer allocator.free(contents);
+
+    var diag: lexer.Diagnostics = .{};
+    const tokens = l.lex(contents, .{ .diagnostics = &diag }) catch {
+        const failure = diag.failure orelse unreachable;
+        try failure.print();
+        std.process.exit(1);
+    };
+    defer allocator.free(tokens);
+
+    if (tokens[0].match(&.{ .Comment, .String })) |token| {
+        std.debug.print("token type is: {s} - ", .{@tagName(token.token_type)});
+
+        for (token.source) |char| {
+            var buffer: [4]u8 = undefined;
+            _ = try std.unicode.utf8Encode(char, &buffer);
+            std.debug.print("{s}", .{buffer});
+        }
+
+        std.debug.print("\n", .{});
+    } else {
+        std.debug.print("token is not a comment or string\n", .{});
+    }
+
+    for (tokens) |token| {
+        printColorForToken(token.token_type);
+
+        for (token.source) |char| {
+            var buffer: [4]u8 = undefined;
+            _ = try std.unicode.utf8Encode(char, &buffer);
+            std.debug.print("{s}", .{buffer});
+        }
+    }
 }
 
 fn printColorForToken(token: Lexer.TokenType) void {
@@ -123,7 +123,7 @@ fn printColorForToken(token: Lexer.TokenType) void {
 
         .Func, .For, .While, .If, .Else, .Return, .Let => std.debug.print("\x1B[0m\x1B[31m", .{}),
 
-        .Number => std.debug.print("\x1B[0m\x1B[35m", .{}),
+        .Number, .Integer => std.debug.print("\x1B[0m\x1B[35m", .{}),
 
         .Division, .LParen, .RParen, .Comma, .LBrace, .RBrace, .Minus, .Semicolon, .Equal, .Plus, .GT, .LT, .GE, .LE => std.debug.print("\x1B[0m\x1B[36m", .{}),
     }

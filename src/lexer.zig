@@ -29,7 +29,8 @@ fn FallthroughExpansion(token_type: type) type {
 
 fn expand_jump_table_fallthrough(token_type: type, jump_table: *JumpTable(token_type), index: usize, in_expansion: ?FallthroughExpansion(token_type)) void {
     var table = jump_table.tables.at(index);
-    if (table.expanded) {
+    defer jump_table.exit();
+    if (jump_table.visit(index)) {
         // already expanded, prevent infinite recursion
         return;
     }
@@ -72,9 +73,8 @@ fn expand_jump_table_fallthrough(token_type: type, jump_table: *JumpTable(token_
     }
 
     // not in an expansion and don't have a fallthrough
-    table.expanded = true;
-    for (table.table.keys_iter()) |key| {
-        const node = table.get(key) orelse unreachable;
+    for (table.chars.keys_iter()) |key| {
+        const node = table.chars.get(key) orelse unreachable;
         const next_index = node.next orelse continue;
 
         expand_jump_table_fallthrough(token_type, jump_table, next_index, null);
@@ -82,21 +82,21 @@ fn expand_jump_table_fallthrough(token_type: type, jump_table: *JumpTable(token_
 }
 
 fn expand_jump_table_sequences(token_type: type, jump_table: *JumpTable(token_type), index: usize) void {
-    const table = jump_table.at(index);
-    if (table.expanded2) {
+    const table = jump_table.getTable(index);
+    defer jump_table.exit();
+    if (jump_table.visit(index)) {
         // already expanded lol
         return;
     }
 
-    table.expanded2 = true;
     if (table.sequences.len() != 0) {
-        for (table.table.keys_iter()) |key| {
+        for (table.chars.keys_iter()) |key| {
             for (table.sequences.keys_iter()) |seq_key| {
                 if (!match_sequence(seq_key, key)) {
                     continue;
                 }
 
-                var node = table.table.at(key);
+                var node = table.chars.at(key);
                 const seq_node = table.sequences.at(seq_key);
 
                 if (node.leaf == null) {
@@ -105,31 +105,46 @@ fn expand_jump_table_sequences(token_type: type, jump_table: *JumpTable(token_ty
                     }
                 }
 
-                if (node.next) |next| {
-                    if (seq_node.next) |seq_next| {
-                        var next_table = jump_table.at(next);
-                        const next_seq_table = jump_table.at(seq_next);
+                if (seq_node.next) |seq_next| {
+                    if (node.next) |next| {
+                        var next_table = jump_table.getTable(next);
+                        const seq_table = jump_table.getTable(seq_next);
 
-                        next_table.merge(next_seq_table, jump_table, seq_next);
-                    }
-                } else {
-                    if (seq_node.next) |seq_next| {
-                        const idx = jump_table.len;
-                        jump_table.append(Table(token_type).init());
+                        next_table.merge(seq_table);
 
-                        node.next = idx;
-
-                        const next_seq_table = jump_table.at(seq_next);
-                        var next_table = jump_table.at(idx);
-                        next_table.merge(next_seq_table, jump_table, seq_next);
+                        // if (next_table.sequences.get(seq_key)) |next_seq| {
+                        //     std.debug.assert(next_seq.next == seq_next);
+                        // } else {
+                        //     next_table.sequences.put(seq_key, seq_node.*);
+                        // }
                     }
                 }
+
+                // if (node.next) |next| {
+                //     if (seq_node.next) |seq_next| {
+                //         var next_table = jump_table.getTable(next);
+                //         const next_seq_table = jump_table.getTable(seq_next);
+                //
+                //         next_table.merge(next_seq_table, jump_table, seq_next);
+                //     }
+                // } else {
+                //     if (seq_node.next) |seq_next| {
+                //         const idx = jump_table.len;
+                //         jump_table.append(Table(token_type).init());
+                //
+                //         node.next = idx;
+                //
+                //         const next_seq_table = jump_table.at(seq_next);
+                //         var next_table = jump_table.at(idx);
+                //         next_table.merge(next_seq_table, jump_table, seq_next);
+                //     }
+                // }
             }
         }
     }
 
-    for (table.table.keys_iter()) |key| {
-        const node = table.table.get(key) orelse unreachable;
+    for (table.chars.keys_iter()) |key| {
+        const node = table.chars.get(key) orelse unreachable;
         if (node.next) |next| {
             expand_jump_table_sequences(token_type, jump_table, next);
         }
@@ -196,8 +211,8 @@ fn compile_static_jump_map(comptime token_patterns: []const TokenPattern, compti
         }
     }
 
-    // expand_jump_table_fallthrough(Leaf(TokenType), &jump_table, 0, null);
-    // expand_jump_table_sequences(Leaf(TokenType), &jump_table, 0);
+    expand_jump_table_fallthrough(Leaf(TokenType), &jump_table, 0, null);
+    expand_jump_table_sequences(Leaf(TokenType), &jump_table, 0);
 
     var static_table = ArrayList(StaticTable(Leaf(TokenType))).init();
     for (jump_table.tables.get()) |table| {
@@ -538,16 +553,16 @@ pub fn Lexer(comptime tokens: anytype) type {
             var leaf: ?Leaf(TokenType) = null;
             var start: usize = 0;
             outer: while (i < input.len) : (i += 1) {
-                const table = static_jump_table.table[table_idx];
+                const table = static_jump_table.tables[table_idx];
                 const char = input[i];
 
-                for (0..table.table.len) |char_idx| {
-                    const char_key = table.table.keys[char_idx];
+                for (0..table.chars.len) |char_idx| {
+                    const char_key = table.chars.keys[char_idx];
                     if (char_key != char) {
                         continue;
                     }
 
-                    const char_node = table.table.values[char_idx];
+                    const char_node = table.chars.values[char_idx];
                     if (char_node.next) |next| {
                         table_idx = next;
                         leaf = char_node.leaf;

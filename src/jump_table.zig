@@ -184,8 +184,26 @@ pub fn JumpTable(TokenType: type) type {
                 },
             }
 
-            // @compileLog(pattern);
             return .{ .jump_table = self, .zero_length = zero_length };
+        }
+
+        pub fn visit(self: *Self, idx: usize) bool {
+            self.visiting += 1;
+
+            var table = self.getTable(idx);
+            if (table.visited) {
+                return true;
+            }
+
+            table.visited = true;
+            return false;
+        }
+
+        pub fn exit(self: *Self) void {
+            self.visiting -= 1;
+            if (self.visiting == 0) {
+                self.clearVisiting();
+            }
         }
 
         fn insert_jump_table(self: *Self, other: *Self, table_mapping: *Map(usize, usize), start: usize, other_start: usize) []Index {
@@ -194,17 +212,9 @@ pub fn JumpTable(TokenType: type) type {
             var table = self.getTable(start);
             var other_table = other.tables.at(other_start);
 
-            if (other_table.visited) {
+            defer other.exit();
+            if (other.visit(other_start)) {
                 return &.{};
-            }
-
-            other_table.visited = true;
-            other.visiting += 1;
-            defer {
-                other.visiting -= 1;
-                if (other.visiting == 0) {
-                    other.clearVisiting();
-                }
             }
 
             for (other_table.chars.keys_iter()) |key| {
@@ -347,7 +357,7 @@ pub fn JumpTable(TokenType: type) type {
             return indicies.get();
         }
 
-        fn getTable(self: *Self, index: usize) *Table(TokenType) {
+        pub fn getTable(self: *Self, index: usize) *Table(TokenType) {
             while (self.tables.len < index + 1) {
                 self.tables.append(Table(TokenType).init());
             }
@@ -356,7 +366,6 @@ pub fn JumpTable(TokenType: type) type {
         }
 
         fn clearVisiting(self: *Self) void {
-            // @compileLog("cleared");
             for (0..self.tables.len) |idx| {
                 var table = self.getTable(idx);
                 table.visited = false;
@@ -388,6 +397,29 @@ pub fn Table(TokenType: type) type {
                 .sequences = Map(u21, Node(TokenType)).init(),
                 .fallthrough = null,
             };
+        }
+
+        pub fn merge(self: *Self, other: *const Self) void {
+            for (other.chars.keys_iter()) |char| {
+                const other_node = other.chars.get(char) orelse unreachable;
+
+                if (!self.chars.has(char)) {
+                    self.chars.put(char, other_node);
+                }
+            }
+
+            for (other.sequences.keys_iter()) |seq| {
+                const other_node = other.sequences.get(seq) orelse unreachable;
+                if (!self.sequences.has(seq)) {
+                    self.sequences.put(seq, other_node);
+                }
+            }
+
+            if (other.fallthrough) |fallthrough| {
+                if (self.fallthrough == null) {
+                    self.fallthrough = fallthrough;
+                }
+            }
         }
     };
 }

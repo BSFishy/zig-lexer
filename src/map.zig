@@ -48,10 +48,6 @@ pub fn Map(K: type, V: type) type {
                 }
             }
 
-            if (K == u21) {
-                // @compileLog("putting", std.unicode.utf8EncodeComptime(key), value);
-            }
-
             self.keys.append(key);
             self.values.append(value);
         }
@@ -111,9 +107,6 @@ pub fn Map(K: type, V: type) type {
             var values: [length]V = undefined;
             @memcpy(&keys, self.keys.contents[0..length]);
             @memcpy(&values, self.values.contents[0..length]);
-
-            // @compileLog(self.keys.contents, keys);
-            // @compileLog(self.values.contents, values);
 
             const const_keys = keys;
             const const_values = values;
