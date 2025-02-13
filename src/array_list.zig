@@ -51,12 +51,12 @@ pub fn ArrayList(Item: type) type {
             self.len += 1;
         }
 
-        pub fn set(self: *Self, index: usize, item: Item) void {
-            if (index >= self.len()) {
+        pub fn set(self: *Self, idx: usize, item: Item) void {
+            if (idx >= self.len) {
                 @compileError("array out of bounds error");
             }
 
-            self.contents[index] = item;
+            self.contents[idx] = item;
         }
 
         pub fn insert(self: *Self, other: []const Item) void {
@@ -90,6 +90,14 @@ pub fn ArrayList(Item: type) type {
         }
 
         pub fn at(self: *Self, idx: usize) *Item {
+            if (idx >= self.len) {
+                @panic("index out of bounds error");
+            }
+
+            return &(self.contents[idx]);
+        }
+
+        pub fn index(self: *const Self, idx: usize) *const Item {
             if (idx >= self.len) {
                 @panic("index out of bounds error");
             }

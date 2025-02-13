@@ -62,9 +62,25 @@ pub const Quantified = struct {
 };
 
 pub const Quantifier = enum {
+    const Self = @This();
+
     ZeroOrMore,
     OneOrMore,
     ZeroOrOne,
+
+    pub fn hasZero(self: Self) bool {
+        switch (self) {
+            .ZeroOrOne, .ZeroOrMore => return true,
+            else => return false,
+        }
+    }
+
+    pub fn hasMore(self: Self) bool {
+        switch (self) {
+            .ZeroOrMore, .OneOrMore => return true,
+            else => return false,
+        }
+    }
 };
 
 pub fn parsePattern(pattern: []const u8) ![]Token {

@@ -97,7 +97,7 @@ pub fn Map(K: type, V: type) type {
                 }
             }
 
-            unreachable;
+            @compileError("tried to get key " ++ std.unicode.utf8EncodeComptime(key));
         }
 
         pub fn keys_iter(self: *const Self) []K {
