@@ -72,6 +72,8 @@ pub fn main() !void {
     };
     defer allocator.free(contents);
 
+    const start = try std.time.Instant.now();
+
     var diag: lexer.Diagnostics = .{};
     const tokens = l.lex(contents, .{ .diagnostics = &diag }) catch {
         const failure = diag.failure orelse unreachable;
@@ -79,6 +81,8 @@ pub fn main() !void {
         std.process.exit(1);
     };
     defer allocator.free(tokens);
+
+    const end = try std.time.Instant.now();
 
     if (tokens[0].match(&.{ .Comment, .String })) |token| {
         std.debug.print("token type is: {s} - ", .{@tagName(token.token_type)});
@@ -105,6 +109,25 @@ pub fn main() !void {
 
         std.debug.print("\x1B[0m", .{});
     }
+
+    const elapsed = end.since(start);
+    try printDuration("\nTime spend lexing: ", "\n", elapsed);
+
+    const time_per_token = elapsed / tokens.len;
+    try printDuration("Time per token: ", " / token\n", time_per_token);
+
+    const time_per_char = elapsed / contents.len;
+    try printDuration("Time per character: ", " / character\n", time_per_char);
+}
+
+fn printDuration(prefix: []const u8, postfix: []const u8, elapsed: u64) !void {
+    const formatter = std.fmt.fmtDuration(elapsed);
+
+    std.debug.print("{s}", .{prefix});
+    const stdout = std.io.getStdErr();
+    try formatter.format("", .{}, stdout.writer());
+
+    std.debug.print("{s}", .{postfix});
 }
 
 fn printColorForToken(token: Lexer.TokenType) void {

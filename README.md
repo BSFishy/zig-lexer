@@ -22,12 +22,12 @@ about the tokens and their patterns. And this is exactly that.
 const lexer = @import("lexer");
 
 const token_patterns = [_]lexer.TokenPattern{
-    .{ .name = "Comment", .pattern = "//([^\n])*" },
-    .{ .name = "Division", .pattern = "/" },
-    .{ .name = "Func", .pattern = "func" },
-    .{ .name = "String", .pattern = "\"([^\"]|\\\\\")*\"" },
-    .{ .name = "Newline", .pattern = "(\n|\r\n)" },
-    .{ .name = "Ident", .pattern = "\\w\\W*" },
+    .Comment = .{ .pattern = "//([^\n])*", .skip = true },
+    .Division = .{ .pattern = "/" },
+    .Func = .{ .pattern = "func" },
+    .String = .{ .pattern = "\"([^\"]|\\\\\")*\"" },
+    .Newline = .{ .pattern = "(\n|\r\n)", .skip = true },
+    .Ident = .{ .pattern = "\\w\\W*" },
 };
 
 const l = lexer.Lexer(&token_patterns).init(allocator);
@@ -45,6 +45,7 @@ Features:
 - Allows matching specific token variants into exhaustive enums
 - Regular expression-esque patterns for matching
 - Linear time complexity lexing
+- Token variants that can be skipped and won't appear in the token enum
 
 ## Implementation details
 
@@ -62,8 +63,8 @@ doesn't match anything else and isn't a specific character).
 
 These are the available sequences:
 
-- **`\a`** - any alphabetic character
-- **`\A`** - any alphanumeric character
+- **`\w`** - any alphabetic character
+- **`\W`** - any alphanumeric character
 - **`\0`** - any numeric character
 
 This structure must be recursively constructed due to the fact that the regular
