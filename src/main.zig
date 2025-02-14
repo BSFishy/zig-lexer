@@ -4,12 +4,6 @@ const regex = @import("regex.zig");
 const ArrayList = @import("array_list.zig").ArrayList;
 
 pub const Lexer = lexer.Lexer(.{
-    // .Test = .{ .pattern = "abc" },
-    // .Test3 = .{ .pattern = "a[^a]c" },
-    // .Test4 = .{ .pattern = "a(cd)*g" },
-    // .Test5 = .{ .pattern = "a(cd*ef)*h" },
-    // .Test2 = .{ .pattern = "a(bc)*d" },
-    // .Test = .{ .pattern = "a(bc*)*d" },
     .Comment = .{ .pattern = "//([^\n])*" },
     .Division = .{ .pattern = "/" },
     .Func = .{ .pattern = "func" },
@@ -108,24 +102,26 @@ pub fn main() !void {
             _ = try std.unicode.utf8Encode(char, &buffer);
             std.debug.print("{s}", .{buffer});
         }
+
+        std.debug.print("\x1B[0m", .{});
     }
 }
 
 fn printColorForToken(token: Lexer.TokenType) void {
     switch (token) {
-        .Comment => std.debug.print("\x1B[0m\x1B[2m", .{}),
+        .Comment => std.debug.print("\x1B[2m", .{}),
 
-        .String => std.debug.print("\x1B[0m\x1B[32m", .{}),
+        .String => std.debug.print("\x1B[32m", .{}),
 
         .Newline, .Space => {},
 
-        .Ident => std.debug.print("\x1B[0m\x1B[34m", .{}),
+        .Ident => std.debug.print("\x1B[34m", .{}),
 
-        .Func, .For, .While, .If, .Else, .Return, .Let => std.debug.print("\x1B[0m\x1B[31m", .{}),
+        .Func, .For, .While, .If, .Else, .Return, .Let => std.debug.print("\x1B[31m", .{}),
 
-        .Number, .Integer => std.debug.print("\x1B[0m\x1B[35m", .{}),
+        .Number, .Integer => std.debug.print("\x1B[35m", .{}),
 
-        .Division, .LParen, .RParen, .Comma, .LBrace, .RBrace, .Minus, .Semicolon, .Equal, .Plus, .GT, .LT, .GE, .LE => std.debug.print("\x1B[0m\x1B[36m", .{}),
+        .Division, .LParen, .RParen, .Comma, .LBrace, .RBrace, .Minus, .Semicolon, .Equal, .Plus, .GT, .LT, .GE, .LE => std.debug.print("\x1B[36m", .{}),
     }
 }
 

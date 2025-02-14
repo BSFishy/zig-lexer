@@ -121,6 +121,8 @@ pub fn JumpTable(TokenType: type) type {
 
                     // TODO: do we need to worry about zero length here?
                     var inner_jump_table = Self.fromPattern(inner, invert);
+                    inner_jump_table.jump_table.expandFallthrough(0);
+
                     var mappings = Map(usize, usize).init();
                     const indicies = self.insert_jump_table(&inner_jump_table.jump_table, &mappings, 0, 0);
 
@@ -369,6 +371,32 @@ pub fn JumpTable(TokenType: type) type {
             for (0..self.tables.len) |idx| {
                 var table = self.getTable(idx);
                 table.visited = false;
+            }
+        }
+
+        fn expandFallthrough(self: *Self, table_idx: usize) void {
+            defer self.exit();
+            if (self.visit(table_idx)) {
+                return;
+            }
+
+            const table = self.getTable(table_idx);
+            const fallthrough = table.fallthrough orelse return;
+
+            for (table.chars.keys_iter()) |key| {
+                if (fallthrough.value.match(key)) {
+                    continue;
+                }
+
+                const node = table.chars.get(key) orelse unreachable;
+                const next_idx = node.next orelse continue;
+                var next_table = self.getTable(next_idx);
+
+                if (next_table.fallthrough != null) {
+                    continue;
+                }
+
+                next_table.fallthrough = fallthrough;
             }
         }
     };

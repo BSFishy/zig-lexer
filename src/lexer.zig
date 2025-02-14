@@ -27,60 +27,6 @@ fn FallthroughExpansion(token_type: type) type {
     };
 }
 
-fn expand_jump_table_fallthrough(token_type: type, jump_table: *JumpTable(token_type), index: usize, in_expansion: ?FallthroughExpansion(token_type)) void {
-    var table = jump_table.tables.at(index);
-    defer jump_table.exit();
-    if (jump_table.visit(index)) {
-        // already expanded, prevent infinite recursion
-        return;
-    }
-
-    // currently expanding this branch
-    if (in_expansion) |expansion| {
-        const fallthrough = expansion.fallthrough;
-        table.expanded = true;
-        if (table.fallthrough != null and expansion.index != index) {
-            return;
-        }
-
-        for (table.table.keys_iter()) |key| {
-            switch (fallthrough.value) {
-                .char => |char| {
-                    if (key != char) {
-                        const node = table.get(key) orelse unreachable;
-                        const next_index = node.next orelse continue;
-
-                        var next_table = jump_table.at(next_index);
-                        if (next_table.fallthrough != null) {
-                            continue;
-                        }
-
-                        next_table.fallthrough = fallthrough;
-                        expand_jump_table_fallthrough(token_type, jump_table, next_index, expansion);
-                    }
-                },
-                else => @compileError("unimplemented"),
-            }
-        }
-
-        return;
-    }
-
-    // if this branch has a fallthrough, expand it
-    if (table.fallthrough) |fallthrough| {
-        expand_jump_table_fallthrough(token_type, jump_table, index, .{ .fallthrough = fallthrough, .index = index });
-        return;
-    }
-
-    // not in an expansion and don't have a fallthrough
-    for (table.chars.keys_iter()) |key| {
-        const node = table.chars.get(key) orelse unreachable;
-        const next_index = node.next orelse continue;
-
-        expand_jump_table_fallthrough(token_type, jump_table, next_index, null);
-    }
-}
-
 fn expand_jump_table_sequences(token_type: type, jump_table: *JumpTable(token_type), index: usize) void {
     const table = jump_table.getTable(index);
     defer jump_table.exit();
@@ -106,39 +52,16 @@ fn expand_jump_table_sequences(token_type: type, jump_table: *JumpTable(token_ty
                 }
 
                 if (seq_node.next) |seq_next| {
-                    if (node.next) |next| {
-                        var next_table = jump_table.getTable(next);
-                        const seq_table = jump_table.getTable(seq_next);
+                    const next_table_idx = node.next orelse blk: {
+                        const idx = jump_table.tables.len;
+                        node.next = idx;
+                        break :blk idx;
+                    };
+                    var next_table = jump_table.getTable(next_table_idx);
 
-                        next_table.merge(seq_table);
-
-                        // if (next_table.sequences.get(seq_key)) |next_seq| {
-                        //     std.debug.assert(next_seq.next == seq_next);
-                        // } else {
-                        //     next_table.sequences.put(seq_key, seq_node.*);
-                        // }
-                    }
+                    const seq_table = jump_table.getTable(seq_next);
+                    next_table.merge(seq_table);
                 }
-
-                // if (node.next) |next| {
-                //     if (seq_node.next) |seq_next| {
-                //         var next_table = jump_table.getTable(next);
-                //         const next_seq_table = jump_table.getTable(seq_next);
-                //
-                //         next_table.merge(next_seq_table, jump_table, seq_next);
-                //     }
-                // } else {
-                //     if (seq_node.next) |seq_next| {
-                //         const idx = jump_table.len;
-                //         jump_table.append(Table(token_type).init());
-                //
-                //         node.next = idx;
-                //
-                //         const next_seq_table = jump_table.at(seq_next);
-                //         var next_table = jump_table.at(idx);
-                //         next_table.merge(next_seq_table, jump_table, seq_next);
-                //     }
-                // }
             }
         }
     }
@@ -211,7 +134,6 @@ fn compile_static_jump_map(comptime token_patterns: []const TokenPattern, compti
         }
     }
 
-    expand_jump_table_fallthrough(Leaf(TokenType), &jump_table, 0, null);
     expand_jump_table_sequences(Leaf(TokenType), &jump_table, 0);
 
     var static_table = ArrayList(StaticTable(Leaf(TokenType))).init();
@@ -582,7 +504,7 @@ pub fn Lexer(comptime tokens: anytype) type {
                             leaf = null;
                             start = i + 1;
                         } else {
-                            @panic(std.fmt.allocPrint(self.allocator, "{} has no leaf or next ({})", .{ table_idx, i }) catch unreachable);
+                            unreachable;
                         }
                     }
 
