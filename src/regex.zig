@@ -84,34 +84,31 @@ pub const Quantifier = enum {
 };
 
 pub fn parsePattern(pattern: []const u8) ![]Token {
-    const tokens = try toTokens(pattern);
-    var parser = Parser.init(truncate(TokenType, tokens));
+    var parser = Parser.init(try toTokens(pattern));
 
     return parser.parse();
 }
 
-fn toTokens(pattern: []const u8) ![]?TokenType {
-    var tokens = [_]?TokenType{null} ** pattern.len;
+fn toTokens(pattern: []const u8) ![]TokenType {
+    var tokens = ArrayList(TokenType).init();
     var utf8 = (try std.unicode.Utf8View.init(pattern)).iterator();
-    var i: usize = 0;
     while (utf8.nextCodepoint()) |codepoint| {
         switch (codepoint) {
-            '[' => tokens[i] = TokenType{ .GroupStart = undefined },
-            ']' => tokens[i] = TokenType{ .GroupEnd = undefined },
-            '\\' => tokens[i] = TokenType{ .Escape = undefined },
-            '^' => tokens[i] = TokenType{ .Carat = undefined },
-            '(' => tokens[i] = TokenType{ .CaptureStart = undefined },
-            ')' => tokens[i] = TokenType{ .CaptureEnd = undefined },
-            '*' => tokens[i] = TokenType{ .Star = undefined },
-            '?' => tokens[i] = TokenType{ .Question = undefined },
-            '+' => tokens[i] = TokenType{ .Plus = undefined },
-            '|' => tokens[i] = TokenType{ .Or = undefined },
-            else => tokens[i] = TokenType{ .Char = codepoint },
+            '[' => tokens.append(TokenType{ .GroupStart = undefined }),
+            ']' => tokens.append(TokenType{ .GroupEnd = undefined }),
+            '\\' => tokens.append(TokenType{ .Escape = undefined }),
+            '^' => tokens.append(TokenType{ .Carat = undefined }),
+            '(' => tokens.append(TokenType{ .CaptureStart = undefined }),
+            ')' => tokens.append(TokenType{ .CaptureEnd = undefined }),
+            '*' => tokens.append(TokenType{ .Star = undefined }),
+            '?' => tokens.append(TokenType{ .Question = undefined }),
+            '+' => tokens.append(TokenType{ .Plus = undefined }),
+            '|' => tokens.append(TokenType{ .Or = undefined }),
+            else => tokens.append(TokenType{ .Char = codepoint }),
         }
-        i += 1;
     }
 
-    return &tokens;
+    return tokens.get();
 }
 
 const Parser = struct {
@@ -128,14 +125,12 @@ const Parser = struct {
     }
 
     fn parse(self: *Self) ![]Token {
-        var out = [_]?Token{null} ** self.tokens.len;
-        var i: usize = 0;
+        var out = ArrayList(Token).init();
         while (try self.next()) |token| {
-            out[i] = token;
-            i += 1;
+            out.append(token);
         }
 
-        return truncate(Token, &out);
+        return out.get();
     }
 
     fn next(self: *Self) !?Token {
@@ -155,24 +150,15 @@ const Parser = struct {
                 switch (quant) {
                     .Star => {
                         self.bump();
-                        return Token{ .Quantified = Quantified{
-                            .quantifier = Quantifier.ZeroOrMore,
-                            .inner = &node,
-                        } };
+                        return .{ .Quantified = Quantified{ .quantifier = Quantifier.ZeroOrMore, .inner = &node } };
                     },
                     .Plus => {
                         self.bump();
-                        return Token{ .Quantified = Quantified{
-                            .quantifier = Quantifier.OneOrMore,
-                            .inner = &node,
-                        } };
+                        return .{ .Quantified = Quantified{ .quantifier = Quantifier.OneOrMore, .inner = &node } };
                     },
                     .Question => {
                         self.bump();
-                        return Token{ .Quantified = Quantified{
-                            .quantifier = Quantifier.ZeroOrOne,
-                            .inner = &node,
-                        } };
+                        return .{ .Quantified = Quantified{ .quantifier = Quantifier.ZeroOrOne, .inner = &node } };
                     },
                     else => {},
                 }
@@ -188,17 +174,21 @@ const Parser = struct {
     }
 
     fn peek_token(self: *Self) ?TokenType {
-        return index(TokenType, self.tokens, self.i);
+        if (self.i >= self.tokens.len) {
+            return null;
+        }
+
+        return self.tokens[self.i];
     }
 
     fn next_char(self: *Self, c: u21) Token {
         self.bump();
-        return Token{ .Char = c };
+        return .{ .Char = c };
     }
 
     fn next_sequence(self: *Self, c: u21) Token {
         self.bump();
-        return Token{ .Sequence = c };
+        return .{ .Sequence = c };
     }
 
     fn next_escape(self: *Self) !Token {
@@ -222,10 +212,7 @@ const Parser = struct {
                 '?' => return self.next_char('?'),
                 '|' => return self.next_char('|'),
                 else => {
-                    var buffer: [4]u8 = undefined;
-                    _ = std.unicode.utf8Encode(char, &buffer) catch unreachable;
-
-                    @compileError("invalid pattern: \\" ++ buffer);
+                    @compileError("invalid pattern: \\" ++ std.unicode.utf8EncodeComptime(char));
                 },
             }
         } else {
@@ -237,19 +224,19 @@ const Parser = struct {
         self.bump();
 
         var invert = false;
-        var items = [_]?u21{null} ** self.tokens.len;
-        for (items, 0..) |_, i| {
+        var items = ArrayList(u21).init();
+        for (0..self.tokens.len) |i| {
             const peek = self.peek_token();
             if (peek) |p| {
                 self.bump();
                 switch (p) {
-                    .Char => |c| items[i] = c,
+                    .Char => |c| items.append(c),
                     .Escape => {
                         const char = self.peek_token();
                         self.bump();
 
                         if (char) |c| {
-                            items[i] = c.to_char();
+                            items.append(c.to_char());
                         } else {
                             return error.invalidPattern;
                         }
@@ -257,7 +244,7 @@ const Parser = struct {
                     .Carat => if (i == 0) {
                         invert = true;
                     } else {
-                        items[i] = '^';
+                        items.append('^');
                     },
                     .GroupEnd => break,
                     else => return error.invalidPattern,
@@ -267,10 +254,7 @@ const Parser = struct {
             }
         }
 
-        return Token{ .Group = Group{
-            .invert = invert,
-            .chars = truncate(u21, &items),
-        } };
+        return .{ .Group = Group{ .invert = invert, .chars = items.get() } };
     }
 
     fn next_capture(self: *Self) !Token {
@@ -305,31 +289,3 @@ const Parser = struct {
         return Token{ .Capture = Capture{ .options = options.get() } };
     }
 };
-
-fn truncate(typ: type, in: []const ?typ) []typ {
-    var len: usize = 0;
-    for (in) |item| {
-        if (item) |_| {
-            len += 1;
-        }
-    }
-
-    var out = [_]typ{undefined} ** len;
-    var i: usize = 0;
-    for (in) |item| {
-        if (item) |it| {
-            out[i] = it;
-            i += 1;
-        }
-    }
-
-    return &out;
-}
-
-fn index(typ: type, arr: []const typ, i: usize) ?typ {
-    if (i >= arr.len) {
-        return null;
-    }
-
-    return arr[i];
-}

@@ -113,11 +113,20 @@ pub fn main() !void {
     const elapsed = end.since(start);
     try printDuration("\nTime spend lexing: ", "\n", elapsed);
 
+    std.debug.print("Tokens lexed: {}\n", .{tokens.len});
+
     const time_per_token = elapsed / tokens.len;
     try printDuration("Time per token: ", " / token\n", time_per_token);
 
     const time_per_char = elapsed / contents.len;
     try printDuration("Time per character: ", " / character\n", time_per_char);
+
+    const elapsed_s = @as(f32, @floatFromInt(elapsed)) / std.time.ns_per_s;
+    const tokens_per_s = @floor(@as(f32, @floatFromInt(tokens.len)) / elapsed_s);
+    std.debug.print("Tokens per second: {d} tokens / second\n", .{tokens_per_s});
+
+    const chars_per_s = @floor(@as(f32, @floatFromInt(contents.len)) / elapsed_s);
+    std.debug.print("Characters per second: {d} characters / second\n", .{chars_per_s});
 }
 
 fn printDuration(prefix: []const u8, postfix: []const u8, elapsed: u64) !void {
