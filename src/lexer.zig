@@ -36,14 +36,16 @@ fn expand_jump_table_sequences(token_type: type, jump_table: *JumpTable(token_ty
     }
 
     if (table.sequences.len() != 0) {
-        for (table.chars.keys_iter()) |key| {
-            for (table.sequences.keys_iter()) |seq_key| {
+        for (table.chars.getEntries()) |entry| {
+            const key = entry.key;
+            for (table.sequences.getEntries()) |seq_entry| {
+                const seq_key = seq_entry.key;
                 if (!match_sequence(seq_key, key)) {
                     continue;
                 }
 
-                var node = table.chars.at(key);
-                const seq_node = table.sequences.at(seq_key);
+                var node = table.chars.get_mut(key) orelse unreachable;
+                const seq_node = table.sequences.get_mut(seq_key) orelse unreachable;
 
                 if (node.leaf == null) {
                     if (seq_node.leaf) |leaf| {
@@ -66,8 +68,8 @@ fn expand_jump_table_sequences(token_type: type, jump_table: *JumpTable(token_ty
         }
     }
 
-    for (table.chars.keys_iter()) |key| {
-        const node = table.chars.get(key) orelse unreachable;
+    for (table.chars.getEntries()) |entry| {
+        const node = entry.value;
         if (node.next) |next| {
             expand_jump_table_sequences(token_type, jump_table, next);
         }
@@ -389,8 +391,9 @@ pub fn Lexer(comptime tokens: anytype) type {
 
                 const static_table = static_jump_table.tables[i];
                 for (0..static_table.chars.len) |idx| {
-                    const key_codepoint = static_table.chars.keys[idx];
-                    const value = static_table.chars.values[idx];
+                    const entry = static_table.chars.entries[idx];
+                    const key_codepoint = entry.key;
+                    const value = entry.value;
 
                     const buffer = try uft8ToString(self.allocator, key_codepoint, false);
                     defer self.allocator.free(buffer);
@@ -413,8 +416,9 @@ pub fn Lexer(comptime tokens: anytype) type {
                 }
 
                 for (0..static_table.sequences.len) |idx| {
-                    const key_codepoint = static_table.sequences.keys[idx];
-                    const value = static_table.sequences.values[idx];
+                    const entry = static_table.sequences.entries[idx];
+                    const key_codepoint = entry.key;
+                    const value = entry.value;
 
                     const buffer = try uft8ToString(self.allocator, key_codepoint, true);
                     defer self.allocator.free(buffer);
@@ -479,12 +483,13 @@ pub fn Lexer(comptime tokens: anytype) type {
                 const char = input[i];
 
                 for (0..table.chars.len) |char_idx| {
-                    const char_key = table.chars.keys[char_idx];
+                    const char_entry = table.chars.entries[char_idx];
+                    const char_key = char_entry.key;
+                    const char_node = char_entry.value;
                     if (char_key != char) {
                         continue;
                     }
 
-                    const char_node = table.chars.values[char_idx];
                     if (char_node.next) |next| {
                         table_idx = next;
                         leaf = char_node.leaf;
@@ -512,12 +517,13 @@ pub fn Lexer(comptime tokens: anytype) type {
                 }
 
                 for (0..table.sequences.len) |seq_idx| {
-                    const seq_key = table.sequences.keys[seq_idx];
+                    const seq_entry = table.sequences.entries[seq_idx];
+                    const seq_key = seq_entry.key;
+                    const seq_node = seq_entry.value;
                     if (!match_sequence(seq_key, char)) {
                         continue;
                     }
 
-                    const seq_node = table.sequences.values[seq_idx];
                     if (seq_node.next) |next| {
                         table_idx = next;
                         leaf = seq_node.leaf;

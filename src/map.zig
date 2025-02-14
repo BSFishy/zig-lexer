@@ -1,13 +1,19 @@
 const std = @import("std");
 const ArrayList = @import("array_list.zig").ArrayList;
 
+pub fn Entry(comptime K: type, comptime V: type) type {
+    return struct {
+        key: K,
+        value: V,
+    };
+}
+
 pub fn StaticMap(comptime K: type, comptime V: type) type {
     return struct {
         const Self = @This();
 
         len: usize,
-        keys: [*]const K,
-        values: [*]const V,
+        entries: [*]const Entry(K, V),
 
         pub fn get(self: *const Self, key: K) ?V {
             // TODO: make this O(1) instead of linear search
@@ -30,31 +36,31 @@ pub fn Map(K: type, V: type) type {
     return struct {
         const Self = @This();
 
-        keys: ArrayList(K),
-        values: ArrayList(V),
+        entries: ArrayList(Entry(K, V)),
 
         pub fn init() Self {
             return .{
-                .keys = ArrayList(K).init(),
-                .values = ArrayList(V).init(),
+                .entries = ArrayList(Entry(K, V)).init(),
             };
         }
 
         pub fn put(self: *Self, key: K, value: V) void {
-            for (self.keys.get(), 0..) |k, i| {
-                if (key == k) {
-                    self.values.set(i, value);
+            for (self.entries.get()) |*entry| {
+                if (entry.key == key) {
+                    entry.value = value;
                     return;
                 }
             }
 
-            self.keys.append(key);
-            self.values.append(value);
+            self.entries.append(.{
+                .key = key,
+                .value = value,
+            });
         }
 
         pub fn has(self: *Self, key: K) bool {
-            for (self.keys.get()) |k| {
-                if (key == k) {
+            for (self.entries.get()) |entry| {
+                if (entry.key == key) {
                     return true;
                 }
             }
@@ -63,57 +69,43 @@ pub fn Map(K: type, V: type) type {
         }
 
         pub fn len(self: *const Self) usize {
-            return self.keys.len;
+            return self.entries.len;
         }
 
         pub fn get(self: *const Self, key: K) ?V {
-            for (self.keys.get(), self.values.get()) |k, value| {
-                if (key == k) {
-                    return value;
+            for (self.entries.get()) |entry| {
+                if (entry.key == key) {
+                    return entry.value;
                 }
             }
 
             return null;
+        }
+
+        pub fn getEntries(self: *const Self) []Entry(K, V) {
+            return self.entries.get();
         }
 
         pub fn get_mut(self: *Self, key: K) ?*V {
-            for (self.keys.get(), 0..) |k, i| {
-                if (key == k) {
-                    return self.values.at(i);
+            for (self.entries.get()) |*entry| {
+                if (entry.key == key) {
+                    return &entry.value;
                 }
             }
 
             return null;
         }
 
-        pub fn at(self: *Self, key: K) *V {
-            for (self.keys.get(), 0..) |k, i| {
-                if (key == k) {
-                    return self.values.at(i);
-                }
-            }
-
-            @compileError("tried to get key " ++ std.unicode.utf8EncodeComptime(key));
-        }
-
-        pub fn keys_iter(self: *const Self) []K {
-            return self.keys.get();
-        }
-
         pub fn compile(self: *const Self) StaticMap(K, V) {
-            const length = self.keys.len;
+            const length = self.entries.len;
 
-            var keys: [length]K = undefined;
-            var values: [length]V = undefined;
-            @memcpy(&keys, self.keys.contents[0..length]);
-            @memcpy(&values, self.values.contents[0..length]);
+            var ent: [length]Entry(K, V) = undefined;
+            @memcpy(&ent, self.entries.contents[0..length]);
 
-            const const_keys = keys;
-            const const_values = values;
+            const const_entries = ent;
             return .{
                 .len = length,
-                .keys = &const_keys,
-                .values = &const_values,
+                .entries = &const_entries,
             };
         }
     };

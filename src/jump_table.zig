@@ -219,8 +219,10 @@ pub fn JumpTable(TokenType: type) type {
                 return &.{};
             }
 
-            for (other_table.chars.keys_iter()) |key| {
-                const other_node = other_table.chars.get(key) orelse unreachable;
+            for (other_table.chars.getEntries()) |entry| {
+                const key = entry.key;
+                const other_node = entry.value;
+
                 if (other_node.exit) {
                     indicies.append(.{
                         .table = start,
@@ -267,8 +269,10 @@ pub fn JumpTable(TokenType: type) type {
                 indicies.insert(self.insert_jump_table(other, table_mapping, next_table, other_next));
             }
 
-            for (other_table.sequences.keys_iter()) |key| {
-                const other_node = other_table.sequences.get(key) orelse unreachable;
+            for (other_table.sequences.getEntries()) |entry| {
+                const key = entry.key;
+                const other_node = entry.value;
+
                 if (other_node.exit) {
                     indicies.append(.{
                         .table = start,
@@ -383,12 +387,14 @@ pub fn JumpTable(TokenType: type) type {
             const table = self.getTable(table_idx);
             const fallthrough = table.fallthrough orelse return;
 
-            for (table.chars.keys_iter()) |key| {
+            for (table.chars.getEntries()) |entry| {
+                const key = entry.key;
+                const node = entry.value;
+
                 if (fallthrough.value.match(key)) {
                     continue;
                 }
 
-                const node = table.chars.get(key) orelse unreachable;
                 const next_idx = node.next orelse continue;
                 var next_table = self.getTable(next_idx);
 
@@ -428,16 +434,18 @@ pub fn Table(TokenType: type) type {
         }
 
         pub fn merge(self: *Self, other: *const Self) void {
-            for (other.chars.keys_iter()) |char| {
-                const other_node = other.chars.get(char) orelse unreachable;
+            for (other.chars.getEntries()) |entry| {
+                const char = entry.key;
+                const other_node = entry.value;
 
                 if (!self.chars.has(char)) {
                     self.chars.put(char, other_node);
                 }
             }
 
-            for (other.sequences.keys_iter()) |seq| {
-                const other_node = other.sequences.get(seq) orelse unreachable;
+            for (other.sequences.getEntries()) |entry| {
+                const seq = entry.key;
+                const other_node = entry.value;
                 if (!self.sequences.has(seq)) {
                     self.sequences.put(seq, other_node);
                 }
@@ -515,8 +523,8 @@ const Index = struct {
     pub fn node(self: *const Self, TokenType: type, jump_table: *JumpTable(TokenType)) *Node(TokenType) {
         const table = jump_table.tables.at(self.table);
         return switch (self.branch) {
-            .char => |char| table.chars.at(char),
-            .sequence => |seq| table.sequences.at(seq),
+            .char => |char| table.chars.get_mut(char) orelse unreachable,
+            .sequence => |seq| table.sequences.get_mut(seq) orelse unreachable,
             .fallthrough => &(table.fallthrough orelse @panic("unimplemented")).next,
         };
     }
