@@ -637,9 +637,9 @@ pub fn Lexer(comptime tokens: anytype) type {
 
 fn uft8ToString(allocator: std.mem.Allocator, codepoint: u21, escaped: bool) ![]u8 {
     var buffer: [4]u8 = undefined;
-    _ = try std.unicode.utf8Encode(codepoint, &buffer);
+    const len = try std.unicode.utf8Encode(codepoint, &buffer);
 
-    const backslash = try replace(allocator, &buffer, "\\", "\\\\");
+    const backslash = try replace(allocator, buffer[0..len], "\\", "\\\\");
     defer allocator.free(backslash);
 
     const newline = try replace(allocator, backslash, "\n", "\\\\n");

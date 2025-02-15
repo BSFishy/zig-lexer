@@ -89,8 +89,8 @@ pub fn main() !void {
 
         for (token.source) |char| {
             var buffer: [4]u8 = undefined;
-            _ = try std.unicode.utf8Encode(char, &buffer);
-            std.debug.print("{s}", .{buffer});
+            const len = try std.unicode.utf8Encode(char, &buffer);
+            std.debug.print("{s}", .{buffer[0..len]});
         }
 
         std.debug.print("\n", .{});
@@ -103,8 +103,8 @@ pub fn main() !void {
 
         for (token.source) |char| {
             var buffer: [4]u8 = undefined;
-            _ = try std.unicode.utf8Encode(char, &buffer);
-            std.debug.print("{s}", .{buffer});
+            const len = try std.unicode.utf8Encode(char, &buffer);
+            std.debug.print("{s}", .{buffer[0..len]});
         }
 
         std.debug.print("\x1B[0m", .{});
