@@ -211,7 +211,6 @@ pub fn JumpTable(TokenType: type) type {
         fn insert_jump_table(self: *Self, other: *Self, table_mapping: *Map(usize, usize), start: usize, other_start: usize) []Index {
             var indicies = ArrayList(Index).init();
 
-            var table = self.getTable(start);
             var other_table = other.tables.at(other_start);
 
             defer other.exit();
@@ -220,6 +219,7 @@ pub fn JumpTable(TokenType: type) type {
             }
 
             for (other_table.chars.getEntries()) |entry| {
+                var table = self.getTable(start);
                 const key = entry.key;
                 const other_node = entry.value;
 
@@ -270,6 +270,7 @@ pub fn JumpTable(TokenType: type) type {
             }
 
             for (other_table.sequences.getEntries()) |entry| {
+                var table = self.getTable(start);
                 const key = entry.key;
                 const other_node = entry.value;
 
@@ -320,6 +321,7 @@ pub fn JumpTable(TokenType: type) type {
             }
 
             if (other_table.fallthrough) |other_fallthrough| {
+                var table = self.getTable(start);
                 if (other_fallthrough.next.exit) {
                     indicies.append(.{ .table = start, .branch = .fallthrough });
                 }
@@ -525,7 +527,7 @@ const Index = struct {
         return switch (self.branch) {
             .char => |char| table.chars.get_mut(char) orelse unreachable,
             .sequence => |seq| table.sequences.get_mut(seq) orelse unreachable,
-            .fallthrough => &(table.fallthrough orelse @panic("unimplemented")).next,
+            .fallthrough => &(table.fallthrough orelse unreachable).next,
         };
     }
 };
