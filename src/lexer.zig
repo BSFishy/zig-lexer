@@ -178,8 +178,8 @@ fn compile_token_type(comptime token_patterns: []const TokenPattern) type {
     }
 
     const tag = @Type(.{
-        .Enum = .{
-            .tag_type = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = @ceil(@log2(@as(f32, token_patterns.len))) } }),
+        .@"enum" = .{
+            .tag_type = @Type(.{ .int = .{ .signedness = .unsigned, .bits = @ceil(@log2(@as(f32, token_patterns.len))) } }),
             .fields = enum_fields.get(),
             .decls = &.{},
             .is_exhaustive = true,
@@ -203,8 +203,8 @@ fn compile_token_type(comptime token_patterns: []const TokenPattern) type {
             }
 
             const matched_tag = @Type(.{
-                .Enum = .{
-                    .tag_type = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = @ceil(@log2(@as(f32, tokens.len))) } }),
+                .@"enum" = .{
+                    .tag_type = @Type(.{ .int = .{ .signedness = .unsigned, .bits = @ceil(@log2(@as(f32, tokens.len))) } }),
                     .fields = &token_types,
                     .decls = &.{},
                     .is_exhaustive = true,
@@ -347,15 +347,15 @@ pub const LexerOptions = struct {
     }
 };
 
-fn tokenPatternsFromTokens(comptime tokens: anytype) [@typeInfo(@TypeOf(tokens)).Struct.fields.len]TokenPattern {
-    const fields = @typeInfo(@TypeOf(tokens)).Struct.fields;
+fn tokenPatternsFromTokens(comptime tokens: anytype) [@typeInfo(@TypeOf(tokens)).@"struct".fields.len]TokenPattern {
+    const fields = @typeInfo(@TypeOf(tokens)).@"struct".fields;
     var token_patterns: [fields.len]TokenPattern = undefined;
     for (fields, 0..) |field, i| {
         var token: TokenPattern = .{ .name = undefined, .pattern = undefined };
         token.name = field.name;
 
         const values = @field(tokens, field.name);
-        for (@typeInfo(@TypeOf(values)).Struct.fields) |value_field| {
+        for (@typeInfo(@TypeOf(values)).@"struct".fields) |value_field| {
             @field(token, value_field.name) = @field(values, value_field.name);
         }
 
