@@ -62,13 +62,13 @@ pub fn main() !void {
 
         const input_view = try std.unicode.Utf8View.init(input);
 
-        var contents = std.ArrayList(u21).init(allocator);
+        var contents = std.ArrayListUnmanaged(u21).empty;
         var iterator = input_view.iterator();
         while (iterator.nextCodepoint()) |codepoint| {
-            try contents.append(codepoint);
+            try contents.append(allocator, codepoint);
         }
 
-        break :blk contents.toOwnedSlice();
+        break :blk contents.toOwnedSlice(allocator);
     };
     defer allocator.free(contents);
 

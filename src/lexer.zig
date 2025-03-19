@@ -259,23 +259,23 @@ fn findLineEnd(input: []const u21, start: usize) usize {
 }
 
 fn renderErrorLine(allocator: std.mem.Allocator, line_start: usize, line_end: usize, failure_start: usize, failure_end: usize) ![]u8 {
-    var line = std.ArrayList(u8).init(allocator);
-    try line.appendSlice("        ");
+    var line = std.ArrayListUnmanaged(u8).empty;
+    try line.appendSlice(allocator, "        ");
 
     var i = line_start;
     while (i < failure_start) : (i += 1) {
-        try line.append(' ');
+        try line.append(allocator, ' ');
     }
 
     while (i < failure_end and i < line_end) : (i += 1) {
-        try line.append('~');
+        try line.append(allocator, '~');
     }
 
     if (i == failure_end) {
-        try line.append('^');
+        try line.append(allocator, '^');
     }
 
-    return line.toOwnedSlice();
+    return line.toOwnedSlice(allocator);
 }
 
 pub const Failure = struct {
@@ -469,8 +469,8 @@ pub fn Lexer(comptime tokens: anytype) type {
         }
 
         pub fn lex(self: *const Self, input: []const u21, opts: LexerOptions) ![]Token {
-            var out = std.ArrayList(Token).init(self.allocator);
-            defer out.deinit();
+            var out = std.ArrayListUnmanaged(Token).empty;
+            defer out.deinit(self.allocator);
 
             opts.fill_failure(null);
 
@@ -497,7 +497,7 @@ pub fn Lexer(comptime tokens: anytype) type {
                         if (char_node.leaf) |char_leaf| {
                             switch (char_leaf) {
                                 .leaf => |token_leaf| {
-                                    try out.append(.{
+                                    try out.append(self.allocator, .{
                                         .token_type = token_leaf,
                                         .source = input[start .. i + 1],
                                     });
@@ -531,7 +531,7 @@ pub fn Lexer(comptime tokens: anytype) type {
                         if (seq_node.leaf) |seq_leaf| {
                             switch (seq_leaf) {
                                 .leaf => |token_leaf| {
-                                    try out.append(.{
+                                    try out.append(self.allocator, .{
                                         .token_type = token_leaf,
                                         .source = input[start .. i + 1],
                                     });
@@ -560,7 +560,7 @@ pub fn Lexer(comptime tokens: anytype) type {
                             if (fallthrough_node.leaf) |fallthrough_leaf| {
                                 switch (fallthrough_leaf) {
                                     .leaf => |token_leaf| {
-                                        try out.append(.{
+                                        try out.append(self.allocator, .{
                                             .token_type = token_leaf,
                                             .source = input[start .. i + 1],
                                         });
@@ -583,7 +583,7 @@ pub fn Lexer(comptime tokens: anytype) type {
                 if (leaf) |l| {
                     switch (l) {
                         .leaf => |token_leaf| {
-                            try out.append(.{
+                            try out.append(self.allocator, .{
                                 .token_type = token_leaf,
                                 .source = input[start..i],
                             });
@@ -611,7 +611,7 @@ pub fn Lexer(comptime tokens: anytype) type {
             if (leaf) |l| {
                 switch (l) {
                     .leaf => |token_leaf| {
-                        try out.append(.{
+                        try out.append(self.allocator, .{
                             .token_type = token_leaf,
                             .source = input[start..i],
                         });
@@ -630,7 +630,7 @@ pub fn Lexer(comptime tokens: anytype) type {
                 }
             }
 
-            return out.toOwnedSlice();
+            return out.toOwnedSlice(self.allocator);
         }
     };
 }
@@ -663,18 +663,18 @@ fn uft8ToString(allocator: std.mem.Allocator, codepoint: u21, escaped: bool) ![]
 }
 
 pub fn replace(allocator: std.mem.Allocator, input: []const u8, target: []const u8, replacement: []const u8) ![]u8 {
-    var result = std.ArrayList(u8).init(allocator);
+    var result = std.ArrayListUnmanaged(u8).empty;
 
     var index: usize = 0;
     while (index < input.len) {
         if (std.mem.startsWith(u8, input[index..], target)) {
-            try result.appendSlice(replacement);
+            try result.appendSlice(allocator, replacement);
             index += target.len;
         } else {
-            try result.append(input[index]);
+            try result.append(allocator, input[index]);
             index += 1;
         }
     }
 
-    return result.toOwnedSlice();
+    return result.toOwnedSlice(allocator);
 }
