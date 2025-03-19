@@ -56,20 +56,7 @@ pub fn main() !void {
         return;
     }
 
-    const contents = try blk: {
-        const input = try std.fs.cwd().readFileAlloc(allocator, "example.lang", 2 * 1024 * 1024 * 1024);
-        defer allocator.free(input);
-
-        const input_view = try std.unicode.Utf8View.init(input);
-
-        var contents = std.ArrayListUnmanaged(u21).empty;
-        var iterator = input_view.iterator();
-        while (iterator.nextCodepoint()) |codepoint| {
-            try contents.append(allocator, codepoint);
-        }
-
-        break :blk contents.toOwnedSlice(allocator);
-    };
+    const contents = try std.fs.cwd().readFileAlloc(allocator, "example.lang", 2 * 1024 * 1024 * 1024);
     defer allocator.free(contents);
 
     const start = try std.time.Instant.now();
@@ -85,15 +72,7 @@ pub fn main() !void {
     const end = try std.time.Instant.now();
 
     if (tokens[0].match(&.{ .Comment, .String })) |token| {
-        std.debug.print("token type is: {s} - ", .{@tagName(token.token_type)});
-
-        for (token.source) |char| {
-            var buffer: [4]u8 = undefined;
-            const len = try std.unicode.utf8Encode(char, &buffer);
-            std.debug.print("{s}", .{buffer[0..len]});
-        }
-
-        std.debug.print("\n", .{});
+        std.debug.print("token type is: {s} - {s}\n", .{ @tagName(token.token_type), token.source });
     } else {
         std.debug.print("token is not a comment or string\n", .{});
     }
@@ -101,13 +80,7 @@ pub fn main() !void {
     for (tokens) |token| {
         printColorForToken(token.token_type);
 
-        for (token.source) |char| {
-            var buffer: [4]u8 = undefined;
-            const len = try std.unicode.utf8Encode(char, &buffer);
-            std.debug.print("{s}", .{buffer[0..len]});
-        }
-
-        std.debug.print("\x1B[0m", .{});
+        std.debug.print("{s}\x1B[0m", .{token.source});
     }
 
     const elapsed = end.since(start);

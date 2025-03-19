@@ -191,7 +191,7 @@ fn compile_token_type(comptime token_patterns: []const TokenPattern) type {
         const Tag = tag;
 
         token_type: tag,
-        source: []const u21,
+        source: []const u8,
 
         pub fn MatchedType(comptime tokens: []const tag) type {
             var token_types: [tokens.len]std.builtin.Type.EnumField = undefined;
@@ -213,7 +213,7 @@ fn compile_token_type(comptime token_patterns: []const TokenPattern) type {
 
             return struct {
                 token_type: matched_tag,
-                source: []const u21,
+                source: []const u8,
             };
         }
 
@@ -232,7 +232,7 @@ fn compile_token_type(comptime token_patterns: []const TokenPattern) type {
     };
 }
 
-fn findLineNumber(input: []const u21, start: usize) usize {
+fn findLineNumber(input: []const u8, start: usize) usize {
     var line_number: usize = 1;
     var i = start;
     while (i > 0) : (i -= 1) {
@@ -244,14 +244,14 @@ fn findLineNumber(input: []const u21, start: usize) usize {
     return line_number;
 }
 
-fn findLineStart(input: []const u21, start: usize) usize {
+fn findLineStart(input: []const u8, start: usize) usize {
     var i = start;
     while (i > 0 and input[i - 1] != '\n') : (i -= 1) {}
 
     return i;
 }
 
-fn findLineEnd(input: []const u21, start: usize) usize {
+fn findLineEnd(input: []const u8, start: usize) usize {
     var i = start;
     while (i < input.len - 1 and input[i] != '\r' and input[i] != '\n') : (i += 1) {}
 
@@ -282,7 +282,7 @@ pub const Failure = struct {
     const Self = @This();
 
     allocator: std.mem.Allocator,
-    input: []const u21,
+    input: []const u8,
     start: usize,
     end: usize,
 
@@ -468,19 +468,22 @@ pub fn Lexer(comptime tokens: anytype) type {
             try std.fmt.format(writer, "}}\n", .{});
         }
 
-        pub fn lex(self: *const Self, input: []const u21, opts: LexerOptions) ![]Token {
+        pub fn lex(self: *const Self, input: []const u8, opts: LexerOptions) ![]Token {
             var out = std.ArrayListUnmanaged(Token).empty;
             defer out.deinit(self.allocator);
 
             opts.fill_failure(null);
 
+            const view = try std.unicode.Utf8View.init(input);
+            var iter = view.iterator();
+
             var i: usize = 0;
             var table_idx: usize = 0;
             var leaf: ?Leaf(TokenType) = null;
             var start: usize = 0;
-            outer: while (i < input.len) : (i += 1) {
+            outer: while (iter.nextCodepointSlice()) |char_slice| : (i = iter.i) {
                 const table = static_jump_table.tables[table_idx];
-                const char = input[i];
+                const char = try std.unicode.utf8Decode(char_slice);
 
                 for (0..table.chars.len) |char_idx| {
                     const char_entry = table.chars.entries[char_idx];
@@ -593,8 +596,8 @@ pub fn Lexer(comptime tokens: anytype) type {
 
                     table_idx = 0;
                     leaf = null;
-                    i -= 1;
-                    start = i + 1;
+                    iter.i -= char_slice.len;
+                    start = iter.i;
 
                     continue :outer;
                 }
