@@ -34,6 +34,37 @@ pub const Lexer = lexer.Lexer(.{
     .GE = .{ .pattern = ">=" },
 });
 
+const Diagnostics = struct {
+    average: u64,
+};
+
+const WARMUP = 10000;
+const RUNS = 200000;
+
+fn benchmark(allocator: std.mem.Allocator, l: *const Lexer, contents: []const u8) !Diagnostics {
+    std.debug.print("running warmups\n", .{});
+    for (0..WARMUP) |_| {
+        const tokens = l.lex(contents, .{}) catch unreachable;
+        defer allocator.free(tokens);
+    }
+
+    std.debug.print("running benchmarks\n", .{});
+    var mean: u64 = 0;
+    for (1..(RUNS + 1)) |count| {
+        const start = try std.time.Instant.now();
+        const tokens = l.lex(contents, .{}) catch unreachable;
+        defer allocator.free(tokens);
+        const end = try std.time.Instant.now();
+
+        const duration = end.since(start);
+        mean = mean +| (duration -| mean) / count;
+    }
+
+    return .{
+        .average = mean,
+    };
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -59,8 +90,6 @@ pub fn main() !void {
     const contents = try std.fs.cwd().readFileAlloc(allocator, "example.lang", 2 * 1024 * 1024 * 1024);
     defer allocator.free(contents);
 
-    const start = try std.time.Instant.now();
-
     var diag: lexer.Diagnostics = .{};
     const tokens = l.lex(contents, .{ .diagnostics = &diag }) catch {
         const failure = diag.failure orelse unreachable;
@@ -68,8 +97,6 @@ pub fn main() !void {
         std.process.exit(1);
     };
     defer allocator.free(tokens);
-
-    const end = try std.time.Instant.now();
 
     if (tokens[0].match(&.{ .Comment, .String })) |token| {
         std.debug.print("token type is: {s} - {s}\n", .{ @tagName(token.token_type), token.source });
@@ -83,7 +110,9 @@ pub fn main() !void {
         std.debug.print("{s}\x1B[0m", .{token.source});
     }
 
-    const elapsed = end.since(start);
+    const diagnostics = try benchmark(allocator, &l, contents);
+    const elapsed = diagnostics.average;
+
     try printDuration("\nTime spend lexing: ", "\n", elapsed);
 
     std.debug.print("Tokens lexed: {}\n", .{tokens.len});

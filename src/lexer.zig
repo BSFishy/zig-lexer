@@ -232,6 +232,7 @@ fn compile_token_type(comptime token_patterns: []const TokenPattern) type {
     };
 }
 
+// FIXME: properly support utf8
 fn findLineNumber(input: []const u8, start: usize) usize {
     var line_number: usize = 1;
     var i = start;
@@ -244,6 +245,7 @@ fn findLineNumber(input: []const u8, start: usize) usize {
     return line_number;
 }
 
+// FIXME: properly support utf8
 fn findLineStart(input: []const u8, start: usize) usize {
     var i = start;
     while (i > 0 and input[i - 1] != '\n') : (i -= 1) {}
@@ -251,6 +253,7 @@ fn findLineStart(input: []const u8, start: usize) usize {
     return i;
 }
 
+// FIXME: properly support utf8
 fn findLineEnd(input: []const u8, start: usize) usize {
     var i = start;
     while (i < input.len - 1 and input[i] != '\r' and input[i] != '\n') : (i += 1) {}
@@ -318,9 +321,7 @@ pub const Failure = struct {
                 }
             }
 
-            var buffer: [4]u8 = undefined;
-            _ = try std.unicode.utf8Encode(char, &buffer);
-            std.debug.print("{s}", .{buffer});
+            std.debug.print("{c}", .{char});
         }
 
         const current_line_start = findLineStart(self.input, self.end);
@@ -483,7 +484,7 @@ pub fn Lexer(comptime tokens: anytype) type {
             var start: usize = 0;
             outer: while (iter.nextCodepointSlice()) |char_slice| : (i = iter.i) {
                 const table = static_jump_table.tables[table_idx];
-                const char = try std.unicode.utf8Decode(char_slice);
+                const char = std.unicode.utf8Decode(char_slice) catch unreachable;
 
                 for (0..table.chars.len) |char_idx| {
                     const char_entry = table.chars.entries[char_idx];
