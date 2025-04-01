@@ -545,6 +545,11 @@ pub fn match_sequence(sequence: u21, key: u21) bool {
                 return true;
             }
 
+            // underscore
+            if (key == '_') {
+                return true;
+            }
+
             return false;
         },
         '0' => {
